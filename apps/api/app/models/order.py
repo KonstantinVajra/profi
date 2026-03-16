@@ -24,6 +24,10 @@ def _uuid() -> str:
     return str(uuid.uuid4())
 
 
+def _now() -> datetime:
+    return datetime.utcnow()
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Project
 # ─────────────────────────────────────────────────────────────────────────────
@@ -34,10 +38,8 @@ class Project(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     status: Mapped[str] = mapped_column(String(50), default="draft")
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), onupdate=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
 
     # relationships
     order_inputs: Mapped[list["OrderInput"]] = relationship(
@@ -62,7 +64,7 @@ class OrderInput(Base):
     raw_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     screenshot_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     source_type: Mapped[str] = mapped_column(String(50), default="text")  # text | screenshot
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
     project: Mapped["Project"] = relationship(back_populates="order_inputs")
 
@@ -107,6 +109,6 @@ class ParsedOrderModel(Base):
 
     # ── meta ─────────────────────────────────────────────────────────────
     user_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
     project: Mapped["Project"] = relationship(back_populates="parsed_orders")

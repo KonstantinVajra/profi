@@ -62,15 +62,35 @@ class LandingRepository:
             logger.info("Deleted existing landing | project=%s | slug=%s",
                         project_id, existing.slug)
 
+    def _unique_slug(self, base_slug: str) -> str:
+        """
+        Return a slug that does not yet exist in landing_pages.
+        If base_slug is free, returns it as-is.
+        Otherwise appends -2, -3, ... until a free slot is found.
+        """
+        candidate = base_slug
+        counter = 2
+        while (
+            self.db.query(LandingPage)
+            .filter(LandingPage.slug == candidate)
+            .first()
+        ):
+            candidate = f"{base_slug}-{counter}"
+            counter += 1
+        return candidate
+
     def create_landing_page(
         self,
         project_id: str,
         slug: str,
         template_key: str,
     ) -> LandingPage:
+        unique = self._unique_slug(slug)
+        if unique != slug:
+            logger.info("Slug collision resolved | original=%s | used=%s", slug, unique)
         page = LandingPage(
             project_id=project_id,
-            slug=slug,
+            slug=unique,
             template_key=template_key,
             status="draft",
             is_public=False,
@@ -79,7 +99,7 @@ class LandingRepository:
         self.db.commit()
         self.db.refresh(page)
         logger.info("LandingPage created | id=%s | slug=%s | project=%s",
-                    page.id, slug, project_id)
+                    page.id, unique, project_id)
         return page
 
     def create_landing_content(

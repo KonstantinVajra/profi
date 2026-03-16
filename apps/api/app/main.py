@@ -1,12 +1,23 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.routers import projects, orders, replies, landings, dialogue, public_landings
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Bootstrap DB tables on startup (SQLite local dev)
+    from app.database import init_db
+    init_db()
+    yield
+
+
 app = FastAPI(
     title="Landing Reply API",
     description="AI-powered freelance reply generator with micro landing pages",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
