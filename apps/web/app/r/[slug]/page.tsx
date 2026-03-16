@@ -55,7 +55,7 @@ export default async function LandingPage({
   const c = data.landing_content;
 
   return (
-    <main className="min-h-screen bg-white max-w-lg mx-auto">
+    <main className="min-h-screen bg-white max-w-lg mx-auto px-4 pb-32">
 
       <Hero hero={c.hero} />
 

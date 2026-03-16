@@ -1,0 +1,17 @@
+[Unit]
+Description=Landing Reply API (FastAPI)
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=deploy
+WorkingDirectory=/srv/landing-reply/apps/api
+EnvironmentFile=/etc/landing-reply/api.env
+ExecStart=/srv/landing-reply/apps/api/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 2
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,17 @@
+[Unit]
+Description=Landing Reply Frontend (Next.js)
+After=network.target landing-reply-api.service
+
+[Service]
+Type=simple
+User=deploy
+WorkingDirectory=/srv/landing-reply/apps/web
+EnvironmentFile=/etc/landing-reply/web.env
+ExecStart=/usr/bin/node /srv/landing-reply/apps/web/.next/standalone/server.js
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
