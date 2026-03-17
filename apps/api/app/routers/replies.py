@@ -31,13 +31,19 @@ router = APIRouter()
 def _substitute_url(variants: list[ReplyVariant], landing_url: str) -> list[ReplyVariant]:
     """
     Replace {{landing_url}} placeholder with the real URL in each variant.
-    Returns new ReplyVariant instances with model_construct to bypass the
-    placeholder validator (which guards AI input, not the final value).
+    Also strips any punctuation that AI placed immediately after the URL,
+    since trailing periods/commas break the link when copy-pasted.
     """
+    import re
     result = []
     for v in variants:
         substituted_text = v.message_text.replace("{{landing_url}}", landing_url)
-        # use model_construct to skip re-validation — substitution is intentional
+        # Remove punctuation that immediately follows the URL (e.g. trailing period from a sentence)
+        substituted_text = re.sub(
+            r'(' + re.escape(landing_url) + r')[.,;:!?]+',
+            r'\1',
+            substituted_text,
+        )
         new_v = ReplyVariant.model_construct(
             variant_type=v.variant_type,
             message_text=substituted_text,

@@ -53,6 +53,30 @@ export default function WorkspacePage() {
   const [replies, setReplies] = useState<ReplyVariantData[]>([]);
   const [clientMsg, setClientMsg] = useState("");
   const [suggestion, setSuggestion] = useState<SuggestionData | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  async function copyToClipboard(text: string, id: string) {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        // Fallback for HTTP (non-localhost IP addresses)
+        const el = document.createElement("textarea");
+        el.value = text;
+        el.style.position = "fixed";
+        el.style.opacity = "0";
+        document.body.appendChild(el);
+        el.focus();
+        el.select();
+        document.execCommand("copy");
+        document.body.removeChild(el);
+      }
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 1500);
+    } catch {
+      // Silent fail — do not show red error to user
+    }
+  }
 
   // ── Step 1-4: generate everything ───────────────────────────────────────
 
@@ -190,10 +214,10 @@ export default function WorkspacePage() {
                   <div className="flex justify-between items-center mb-2">
                     <span className="text-xs font-medium uppercase text-gray-400">{r.variant_type}</span>
                     <button
-                      onClick={() => navigator.clipboard.writeText(r.message_text)}
+                      onClick={() => copyToClipboard(r.message_text, r.id)}
                       className="text-xs text-gray-400 hover:text-black"
                     >
-                      Копировать
+                      {copiedId === r.id ? "✓ Скопировано" : "Копировать"}
                     </button>
                   </div>
                   <p className="text-sm whitespace-pre-wrap">{r.message_text}</p>
@@ -233,10 +257,10 @@ export default function WorkspacePage() {
                     <div className="flex justify-between items-center mb-1">
                       <span className="text-xs font-medium uppercase text-gray-400">{s.type}</span>
                       <button
-                        onClick={() => navigator.clipboard.writeText(s.text)}
+                        onClick={() => copyToClipboard(s.text, `suggestion-${i}`)}
                         className="text-xs text-gray-400 hover:text-black"
                       >
-                        Копировать
+                        {copiedId === `suggestion-${i}` ? "✓ Скопировано" : "Копировать"}
                       </button>
                     </div>
                     <p className="text-sm">{s.text}</p>
