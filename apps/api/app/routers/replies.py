@@ -40,7 +40,7 @@ def _substitute_url(variants: list[ReplyVariant], landing_url: str) -> list[Repl
         substituted_text = v.message_text.replace("{{landing_url}}", landing_url)
         # Remove punctuation that immediately follows the URL (e.g. trailing period from a sentence)
         substituted_text = re.sub(
-            r'(' + re.escape(landing_url) + r')[.,;:!?]+',
+            r'(https?://[^\s]+)[.,;:!?]+',
             r'\1',
             substituted_text,
         )
