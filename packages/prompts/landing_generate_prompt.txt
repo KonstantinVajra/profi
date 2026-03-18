@@ -1,7 +1,15 @@
-SYSTEM_PROMPT = """
-You generate a LandingPageModel JSON.
+You generate one complete LandingPageModel JSON object.
 
 The schema definition is provided separately and must be strictly followed.
+
+---
+
+IMPORTANT:
+
+- Return exactly one complete JSON object
+- Do not return partial output
+- Do not return only one section (e.g. personal_block)
+- Do not return plain text instead of structured fields
 
 ---
 
@@ -17,13 +25,15 @@ The page is a UI wrapper around that reply.
 
 PERSONAL BLOCK (CRITICAL):
 
+personal_block must be a valid object matching the provided schema, not a string.
+
 personal_block must feel like a real expert response to this specific order.
 
 It must include:
 
 - at least one situation-specific observation
-- grounded in parsed order data, explicit client requirements, or reasonable practical implications of the request
-- practical reasoning (not abstract phrases)
+- grounding in parsed order data, explicit client requirements, or reasonable practical implications of the request
+- practical reasoning (not abstract phrasing)
 
 ---
 
@@ -47,38 +57,49 @@ STYLE (personal_block):
 
 IMPORTANT:
 
-Do NOT invent dramatic problems if the order is simple.
+Do not invent dramatic problems if the order is simple.
 
 Instead, highlight:
+
 - subtle risks
 - overlooked details
 - practical nuances
 
 ---
 
-OTHER FIELDS:
+ALL OTHER FIELDS:
 
-Generate all required fields according to the provided schema.
+Generate the full LandingPageModel with all required fields and required nested objects.
 
 Rules:
 
 - keep them minimal but valid
-- do not leave required fields empty
-- quick_questions must contain at least one item
+- do not omit required fields
+- do not leave required collections empty
 
 ---
 
-SELF-CHECK:
+CRITICAL OUTPUT RULES:
 
-- is personal_block specific to this order?
-- does it include a real observation?
-- is it non-generic?
+- Return valid JSON only
+- Return one full LandingPageModel object
+- Do not return plain text where the schema requires an object
+- Do not omit required objects
 
-If not — rewrite.
+---
+
+SELF-CHECK BEFORE FINAL ANSWER:
+
+- Is the output a full JSON object?
+- Does every field match the schema type?
+- Are all required objects present?
+- Are required collections non-empty?
+- Is personal_block specific to this order?
+
+If any answer is no, rewrite.
 
 ---
 
 OUTPUT:
 
-Return a valid JSON object matching LandingPageModel schema.
-"""
+Return one valid JSON object matching LandingPageModel schema.
