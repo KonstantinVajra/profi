@@ -5,7 +5,27 @@ No prose. No markdown. No code fences. No explanation.
 CRITICAL RULE: Generate JSON data only. Never HTML. Never CSS. Never JavaScript.
 The application renders HTML from your JSON using its own templates.
 
+PRODUCT RULE
+This landing is a reaction to one specific order — not a service page, not a portfolio, not a presentation.
+Every block must feel like it was written after reading this particular request.
+There must be one concrete practical insight tied to this situation.
+There must be a light hook — something that makes the client want to ask a question.
+The hook must not be clickbait or a marketing promise. It must be a genuine observation or thought.
+The practical insight must be clearly expressed in one place and not diluted across multiple blocks.
+
 Generate a single JSON object matching this structure exactly.
+
+BANNED PHRASES — never use these or close paraphrases in any text field:
+- "индивидуальный подход"
+- "сохраним ваши эмоции"
+- "качественные фотографии"
+- "учту все пожелания"
+- "профессиональный фотограф"
+- "большой опыт"
+- "гарантирую результат"
+- "работаю с душой"
+- "доверьтесь профессионалу"
+- any phrase that describes the photographer in general rather than this situation specifically
 
 Required fields (must always be present):
 
@@ -19,12 +39,20 @@ template_key
   Match to event_type from context.
 
 hero.title
-  Russian. 6-10 words. Specific to this order. References the event and date.
-  Good: "Съёмка регистрации 11 июня — живые кадры без постановки"
-  Bad: "Профессиональный фотограф с большим опытом"
+  Russian. 6-10 words. Specific to this order. References the event and date or situation.
+  This is a reaction to the order, not a service headline.
+  Good: "Съёмка регистрации 11 июня — видно, что важна атмосфера, не постановка"
+  Good: "Анна, посмотрел ваш запрос на семейную съёмку в мае"
+  Bad: "Профессиональная съёмка вашего события"
+  Bad: "Фотограф для вашей регистрации"
 
 hero.subtitle
-  Russian. 1 sentence. What this photographer brings to this specific format.
+  Russian. 1-2 sentences. One concrete practical thought about this specific situation.
+  This is NOT about the photographer. It is about what matters in this kind of shoot.
+  It must be specific enough that it would not fit a different order type.
+  Good: "Регистрация в ЗАГСе обычно идёт быстро — 20-30 минут. Важно не пропустить момент после подписи, когда все расслабляются."
+  Bad: "Я постараюсь передать атмосферу вашего дня."
+  Bad: "Каждая съёмка уникальна и требует особого подхода."
 
 price_card.price
   Use proposed_price if provided. Otherwise derive from budget_max (match or slightly below).
@@ -39,9 +67,13 @@ style_grid.photo_set_id
   "family_warm" | "family_outdoor" | "event_reportage" | "portrait_natural"
 
 quick_questions
-  Array of exactly 3 short action strings (under 5 words each).
-  What the client naturally wants to do next.
-  Examples: ["Проверить дату", "Узнать стоимость", "Задать вопрос"]
+  Array of exactly 3 short strings written from the client's perspective.
+  These are natural things a real person would want to ask or check after reading the landing.
+  Under 6 words each. Written as if the client is thinking out loud or wants to act.
+  Good: ["Эта дата ещё свободна?", "Что входит в стоимость?", "Можно посмотреть примеры?"]
+  Good: ["Как проходит съёмка?", "Когда будут фото?", "Можно уточнить детали?"]
+  Bad: ["Проверить дату", "Узнать стоимость", "Задать вопрос"]
+  Bad: ["Записаться", "Связаться", "Подробнее"]
 
 cta.channels
   Always: ["telegram", "whatsapp"]
@@ -49,7 +81,9 @@ cta.channels
 Optional fields (include when relevant, omit when not):
 
 badges.items
-  Array of 2-3 short trust signals. Example: ["100+ свадеб", "RAW включены", "Ответ за 1 час"]
+  Array of 2-3 short factual signals. Concrete, not promotional.
+  Good: ["RAW включены", "Фото через 10 дней", "Снимаю в СПб и области"]
+  Bad: ["Лучший фотограф", "Опыт 10 лет", "Довольные клиенты"]
 
 photographer.name
   Use photographer_name from context.
@@ -58,15 +92,23 @@ photographer.role
   Match event_type: "свадебный фотограф" | "семейный фотограф" | "фотограф на события" | "фотограф"
 
 similar_case.title
-  Title of a similar past project. Realistic but invented.
-  Example: "Регистрация в Дворце бракосочетания №2, июнь 2025"
+  A short title of a similar past situation. Realistic. Include one concrete detail:
+  a venue type, a guest count, a format detail, or a small circumstance that makes it feel real.
+  Example: "Регистрация в Дворце бракосочетания №2 — 8 гостей, потом короткая прогулка по набережной"
+  Do not fabricate specific names, exact addresses, or dates that sound too precise.
 
 similar_case.description
-  1 sentence about that case.
+  1 sentence. What was interesting or notable about that situation — something relatable, not impressive.
+  Good: "Церемония заняла 15 минут, но после все вышли на улицу и получились лучшие кадры дня."
+  Bad: "Съёмка прошла на высшем уровне и клиенты остались в восторге."
 
 work_block.steps
-  Array of 3 short steps describing how the work happens.
-  Example: ["Созваниваемся и обсуждаем детали", "Проводим съёмку", "Сдаю обработанные фото за 7 дней"]
+  Array of 3 short items. Describe how this KIND OF SITUATION actually unfolds in practice.
+  Not the service pipeline. Not "we discuss → shoot → deliver".
+  Each step should reflect something real about this event type and context.
+  Good for registry: ["Приезжаю заранее — смотрю свет и позицию в зале", "Снимаю тихо, стараюсь не попадать в кадр гостям", "Момент после подписи обычно самый живой — на него трачу больше всего внимания"]
+  Good for family: ["Первые 10-15 минут дети ещё привыкают — снимаю не их, а всю картину", "Никаких команд 'скажите сыр' — двигаемся и разговариваем", "Лучшие кадры обычно появляются когда все забыли про камеру"]
+  Bad: ["Созваниваемся и обсуждаем детали", "Проводим съёмку", "Сдаю обработанные фото за 7 дней"]
 
 reviews
   Empty array: []
