@@ -6,7 +6,7 @@
  * AI never generates HTML — this file is the renderer.
  *
  * Block render order:
- *   hero → badges → style_grid → similar_case → price_card
+ *   hero → personal_block → badges → style_grid → similar_case → price_card
  *   → photographer → work_block → reviews → quick_questions → cta
  */
 
@@ -23,6 +23,7 @@ import {
   Reviews,
   QuickQuestions,
   CtaButtons,
+  PersonalBlockSection,
 } from "@/components/landing/blocks";
 
 // ── Data fetching ─────────────────────────────────────────────────────────
@@ -58,6 +59,8 @@ export default async function LandingPage({
     <main className="min-h-screen bg-white max-w-lg mx-auto px-4 pb-32">
 
       <Hero hero={c.hero} />
+
+      {c.personal_block && <PersonalBlockSection block={c.personal_block} />}
 
       {c.badges && <Badges badges={c.badges} />}
 

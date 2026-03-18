@@ -60,6 +60,20 @@ class CtaBlock(BaseModel):
     channels: list[str] = ["telegram", "whatsapp"]
 
 
+class PersonalBlock(BaseModel):
+    """
+    Editorial block: a reaction to this specific order.
+    Sequence: request_match → key_feature → trust_line → hook_line.
+    The block is optional on LandingPageModel.
+    If present, all four fields are required — no partial states.
+    AI must never generate HTML in these fields.
+    """
+    request_match: str
+    key_feature: str
+    trust_line: str
+    hook_line: str
+
+
 # ── LandingPageModel — full contract ─────────────────────────────────────
 
 class LandingPageModel(BaseModel):
@@ -85,6 +99,7 @@ class LandingPageModel(BaseModel):
     work_block: Optional[WorkBlock] = None
     reviews: list[ReviewItem] = []
     secondary_actions: list[str] = []
+    personal_block: Optional[PersonalBlock] = None
 
     @field_validator("quick_questions")
     @classmethod

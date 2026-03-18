@@ -132,6 +132,9 @@ class LandingGeneratorService:
             f"budget_max: {o.budget_max or ''}",
             f"requirements: {', '.join(o.requirements) if o.requirements else ''}",
             f"priority_signals: {', '.join(o.priority_signals) if o.priority_signals else ''}",
+            f"client_intent_line: {o.client_intent_line or ''}",
+            f"situation_notes: {o.situation_notes or ''}",
+            f"shoot_feel: {o.shoot_feel or ''}",
             f"photographer_name: {photographer_name}",
             f"proposed_price: {proposed_price}",
         ]

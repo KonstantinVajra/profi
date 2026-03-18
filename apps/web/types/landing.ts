@@ -47,6 +47,13 @@ export interface CtaBlock {
   channels: string[];
 }
 
+export interface PersonalBlock {
+  request_match: string;
+  key_feature: string;
+  trust_line: string;
+  hook_line: string;
+}
+
 export interface LandingPageModel {
   slug: string;
   template_key: string;
@@ -63,6 +70,7 @@ export interface LandingPageModel {
   work_block?: WorkBlock;
   reviews: ReviewItem[];
   secondary_actions: string[];
+  personal_block?: PersonalBlock | null;
 }
 
 export interface LandingPageMeta {

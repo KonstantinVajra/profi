@@ -46,7 +46,12 @@ quick_questions
 cta.channels
   Always: ["telegram", "whatsapp"]
 
-Optional fields (include when relevant, omit when not):
+Input context available (from ParsedOrder — use to personalise copy and personal_block):
+  client_intent_line — what matters most to this client, AI-normalised sentence
+  situation_notes    — what is practically notable about this situation
+  shoot_feel         — expected atmosphere in 3-5 words
+
+Optional output fields (include when relevant, omit when not):
 
 badges.items
   Array of 2-3 short trust signals. Example: ["100+ свадеб", "RAW включены", "Ответ за 1 час"]
@@ -73,5 +78,38 @@ reviews
 
 secondary_actions
   Empty array: []
+
+personal_block
+  Optional as a whole. Include only when client_intent_line and situation_notes provide enough signal.
+  If the order is too sparse to fill all four fields — omit the entire block. Do not fabricate.
+  If included, all four fields are required. Do not return a partial personal_block.
+  AI must never generate HTML in these fields.
+
+  personal_block.request_match
+    1 sentence. Mirror what the client wrote back to them in clean neutral form.
+    Use client_intent_line from context as the primary source.
+    Must feel like recognition, not flattery.
+    Good: "Судя по запросу, вам нужна тихая съёмка самой церемонии — без режиссуры и постановки."
+    Bad: "Вы хотите лучшие фотографии вашего дня."
+
+  personal_block.key_feature
+    1 sentence. One concrete practical observation about THIS situation.
+    Use situation_notes from context as the primary source.
+    Must be specific enough to not fit a different order.
+    Good: "В небольшом зале ЗАГСа кадры появляются сами — там не нужно ничего создавать."
+    Bad: "Каждая съёмка требует особого подхода."
+
+  personal_block.trust_line
+    1 sentence. One low-key experience signal. Not promotional. Not a statistic.
+    Good: "Снимал похожий формат несколько раз — в таких условиях лучше не руководить, а просто быть рядом."
+    Bad: "150+ довольных клиентов и опыт с 2015 года."
+
+  personal_block.hook_line
+    1 sentence. A genuine question or open-loop line that makes a reply feel natural.
+    May be a question or an observation that invites the client to continue.
+    Not clickbait. Not a promise.
+    Good: "Планируете выйти после церемонии или сразу разъезжаетесь?"
+    Good: "Интересно, что для вас важнее — сама церемония или то, что будет после."
+    Bad: "Напишите нам прямо сейчас!"
 
 Return the complete JSON object. All required fields must be present.
