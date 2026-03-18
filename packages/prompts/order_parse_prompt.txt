@@ -35,34 +35,42 @@ situation_notes    — 1-2 sentences: what makes this situation practically nota
                      важно не пропустить момент сразу после подписи."
                      Use null if the order gives too little signal.
 
-shoot_feel         — 3-5 words: expected shooting atmosphere or style, as inferred from the order.
-                     Free text, not an enum. Used only as contextual input for copy generation.
-                     Examples: "тихий документальный репортаж", "лёгкая прогулочная съёмка",
-                     "спокойная съёмка в небольшом зале"
-                     Use null if unclear.
+shoot_feel         — 3-5 words in Russian: the expected shooting atmosphere or style.
+                     Infer from any available signal: event type, guest count, venue, cultural
+                     context, budget level, or tone of the order text.
+                     Do not wait for the client to name the style explicitly — infer it.
+                     Use null ONLY if the order contains no signal at all (e.g. a single word
+                     with no context whatsoever).
+                     Examples by signal type:
+                       large wedding, festive culture → "живая праздничная свадьба"
+                       Armenian / Georgian / etc. wedding → "традиционная национальная свадьба"
+                       small registry, few guests → "тихий камерный репортаж"
+                       outdoor family, children → "лёгкая прогулочная съёмка"
+                       corporate event, formal venue → "деловое мероприятие в зале"
+                       portrait, solo client → "спокойная студийная съёмка"
 
 Return exactly this JSON structure with all keys present.
 Use null for fields you cannot determine. Use [] for empty arrays.
 
 Example output:
 {
-  "client_name": "Ксения",
-  "client_label": "Ксения",
-  "event_type": "registry",
-  "event_subtype": "small_registry",
+  "client_name": "Вася",
+  "client_label": "молодожёны",
+  "event_type": "wedding",
+  "event_subtype": "church_wedding",
   "city": "Санкт-Петербург",
-  "location": null,
-  "event_date": "2026-06-11",
-  "date_text": "11 июня",
+  "location": "Первый дворец бракосочетания",
+  "event_date": "2026-11-01",
+  "date_text": "1 ноября",
   "duration_text": null,
-  "guest_count_text": "до 10",
-  "budget_max": 15000,
+  "guest_count_text": null,
+  "budget_max": 50000,
   "currency": "RUB",
   "requirements": [],
-  "priority_signals": ["небольшой формат", "живые кадры"],
+  "priority_signals": ["армянская свадьба", "торжественная церемония"],
   "tone_signal": "neutral",
-  "extracted_confidence": 0.85,
-  "client_intent_line": "Клиенту важны живые кадры без постановки — атмосфера, не режиссура.",
-  "situation_notes": "Небольшой зал ЗАГСа, до 10 гостей. Церемония скорее всего 20–30 минут. Важен момент после подписи, когда все расслабляются.",
-  "shoot_feel": "тихий документальный репортаж"
+  "extracted_confidence": 0.78,
+  "client_intent_line": "Клиенту нужна съёмка армянской свадьбы — торжественной, с традициями и большим количеством гостей.",
+  "situation_notes": "Армянская свадьба, вероятно многолюдная и эмоциональная. Первый дворец бракосочетания — официальная церемония. Важно успеть снять традиционные моменты.",
+  "shoot_feel": "традиционная национальная свадьба"
 }
