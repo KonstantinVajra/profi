@@ -28,6 +28,34 @@ class ParsedOrder(BaseModel):
     tone_signal: Optional[Literal["formal", "friendly", "neutral"]] = Field(None)
     extracted_confidence: Optional[float] = Field(None, ge=0.0, le=1.0)
 
+    # ── semantic inference fields (additive, all optional) ────────────────
+    client_intent_line: Optional[str] = Field(
+        None,
+        description=(
+            "One clean sentence capturing what matters most to this client. "
+            "AI-normalised, not a verbatim quote. Ready to use in landing copy. "
+            "Example: 'Клиенту важны живые кадры без постановки — атмосфера, не режиссура.'"
+        ),
+    )
+    situation_notes: Optional[str] = Field(
+        None,
+        description=(
+            "1-2 sentences: AI inference about what makes this situation practically notable. "
+            "Covers venue constraints, timing, format nuances — anything that affects how "
+            "the shoot actually goes. Not a client quote. Not a service description. "
+            "Example: 'Небольшой зал ЗАГСа, вероятно смешанный свет. "
+            "Церемония короткая — важно не пропустить момент сразу после подписи.'"
+        ),
+    )
+    shoot_feel: Optional[str] = Field(
+        None,
+        description=(
+            "Short free-text phrase: expected atmosphere or style as inferred from the order. "
+            "3-5 words. Contextual input for copy generation only — not for program logic. "
+            "Examples: 'тихий документальный репортаж', 'лёгкая прогулочная съёмка'"
+        ),
+    )
+
     class Config:
         from_attributes = True
 

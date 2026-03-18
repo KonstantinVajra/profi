@@ -76,6 +76,10 @@ def generate_landing(
         priority_signals=parsed_order_record.priority_signals or [],
         tone_signal=parsed_order_record.tone_signal,
         extracted_confidence=parsed_order_record.extracted_confidence,
+        # ── semantic inference fields ────────────────────────────────────
+        client_intent_line=parsed_order_record.client_intent_line,
+        situation_notes=parsed_order_record.situation_notes,
+        shoot_feel=parsed_order_record.shoot_feel,
     )
 
     # 3. generate
@@ -122,6 +126,3 @@ def generate_landing(
         ),
         landing_content=landing_model,
     )
-
-
-

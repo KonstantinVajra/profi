@@ -106,6 +106,9 @@ class ParsedOrderModel(Base):
     priority_signals: Mapped[list] = mapped_column(JSON, default=list)
     tone_signal: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     extracted_confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    client_intent_line: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    situation_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    shoot_feel: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
     # ── meta ─────────────────────────────────────────────────────────────
     user_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)

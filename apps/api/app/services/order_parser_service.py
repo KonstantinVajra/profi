@@ -116,6 +116,7 @@ class OrderParserService:
             "client_name", "client_label", "event_type", "event_subtype",
             "city", "location", "date_text", "duration_text",
             "guest_count_text", "tone_signal",
+            "client_intent_line", "situation_notes", "shoot_feel",
         ):
             val = result.get(key)
             if isinstance(val, str):

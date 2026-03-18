@@ -109,6 +109,10 @@ class OrderRepository:
             priority_signals=parsed.priority_signals,
             tone_signal=parsed.tone_signal,
             extracted_confidence=parsed.extracted_confidence,
+            # ── semantic inference fields ────────────────────────────────
+            client_intent_line=parsed.client_intent_line,
+            situation_notes=parsed.situation_notes,
+            shoot_feel=parsed.shoot_feel,
             # state
             user_confirmed=False,
         )
@@ -117,5 +121,3 @@ class OrderRepository:
         self.db.refresh(record)
         logger.info("ParsedOrder saved | id=%s | project=%s", record.id, project_id)
         return record
-
-

@@ -23,6 +23,24 @@ priority_signals  — array of what the client seems to value most
 tone_signal       — one of: formal | friendly | neutral
 extracted_confidence — float 0.0–1.0: how complete and confident is this extraction
 
+client_intent_line — one clean Russian sentence capturing what matters most to this client.
+                     AI-normalised wording, not a verbatim quote. Ready to use in landing copy.
+                     Example: "Клиенту важны живые кадры без постановки — атмосфера, не режиссура."
+                     Use null if the order gives too little signal.
+
+situation_notes    — 1-2 sentences: what makes this situation practically notable.
+                     Covers venue type, timing, format constraints, or anything affecting how
+                     the shoot actually goes. Write as AI inference, not as a client quote.
+                     Example: "Небольшой зал ЗАГСа, вероятно смешанный свет. Церемония короткая —
+                     важно не пропустить момент сразу после подписи."
+                     Use null if the order gives too little signal.
+
+shoot_feel         — 3-5 words: expected shooting atmosphere or style, as inferred from the order.
+                     Free text, not an enum. Used only as contextual input for copy generation.
+                     Examples: "тихий документальный репортаж", "лёгкая прогулочная съёмка",
+                     "спокойная съёмка в небольшом зале"
+                     Use null if unclear.
+
 Return exactly this JSON structure with all keys present.
 Use null for fields you cannot determine. Use [] for empty arrays.
 
@@ -43,5 +61,8 @@ Example output:
   "requirements": [],
   "priority_signals": ["небольшой формат", "живые кадры"],
   "tone_signal": "neutral",
-  "extracted_confidence": 0.85
+  "extracted_confidence": 0.85,
+  "client_intent_line": "Клиенту важны живые кадры без постановки — атмосфера, не режиссура.",
+  "situation_notes": "Небольшой зал ЗАГСа, до 10 гостей. Церемония скорее всего 20–30 минут. Важен момент после подписи, когда все расслабляются.",
+  "shoot_feel": "тихий документальный репортаж"
 }
