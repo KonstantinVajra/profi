@@ -47,6 +47,9 @@ Return a corrected complete LandingPageModel JSON object.
 Required fields: slug, template_key, hero, price_card, style_grid,
 quick_questions (non-empty), cta, personal_block.
 
+personal_block must use exactly these keys: request_match, key_feature, trust_line, hook_line.
+Do not use other key names such as observation, advice, or insight.
+
 Return ONLY the corrected JSON object. Nothing else.
 """
 
@@ -66,6 +69,13 @@ _PHOTO_SET_MAP: dict[str, str] = {
     "event":    "event_reportage",
     "portrait": "portrait_natural",
 }
+
+_PERSONAL_BLOCK_KEYS = frozenset({
+    "request_match",
+    "key_feature",
+    "trust_line",
+    "hook_line",
+})
 
 
 class LandingGeneratorService:
@@ -238,10 +248,17 @@ class LandingGeneratorService:
                 "Задать вопрос",
             ]
 
-        # ── personal_block: remove if AI returned a string ────────────────
+        # ── personal_block: remove if invalid shape ───────────────────────
         # Validation will fail cleanly; retry can produce a correct object.
-        if isinstance(result.get("personal_block"), str):
+        pb = result.get("personal_block")
+        if isinstance(pb, str):
             logger.warning("personal_block was a string — removing before validation")
+            del result["personal_block"]
+        elif isinstance(pb, dict) and not _PERSONAL_BLOCK_KEYS.issubset(pb.keys()):
+            logger.warning(
+                "personal_block has wrong keys %s — removing before validation",
+                set(pb.keys()),
+            )
             del result["personal_block"]
 
         return result
