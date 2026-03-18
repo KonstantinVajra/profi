@@ -29,7 +29,7 @@ The landing page is just a UI wrapper around your reply.
 
 Your goal:
 
-Show that you understand the client’s situation
+Show that you understand the client's situation
 and know what can go wrong and how to handle it.
 
 ---
@@ -219,3 +219,6 @@ price: {proposed_price}
         slug = re.sub(r'-+', '-', slug).strip('-')
 
         return slug[:60] or "landing"
+
+
+landing_generator_service = LandingGeneratorService()
