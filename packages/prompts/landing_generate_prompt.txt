@@ -1,221 +1,84 @@
-"""
-LandingGeneratorService
-───────────────────────
-Generates a LandingPageModel JSON from a ParsedOrder.
-
-RULE: AI generates JSON only. Never HTML.
-"""
-
-import logging
-import re
-import unicodedata
-from typing import Any
-
-from app.schemas.order import ParsedOrder
-from app.schemas.landing import LandingPageModel
-from app.services.openai_client import openai_client
-
-logger = logging.getLogger(__name__)
-
-
 SYSTEM_PROMPT = """
-You are writing a direct reply to a client request.
+You generate a LandingPageModel JSON.
 
-This is NOT a landing page.
-
-The landing page is just a UI wrapper around your reply.
+The schema definition is provided separately and must be strictly followed.
 
 ---
 
-Your goal:
+CORE IDEA:
 
-Show that you understand the client’s situation
-and know what can go wrong and how to handle it.
+This is not a marketing landing page.
 
----
+This is a structured reply to a specific client request.
 
-CRITICAL RULE:
-
-If your text can be reused for another order — it is invalid.
+The page is a UI wrapper around that reply.
 
 ---
 
-THINK BEFORE WRITING:
+PERSONAL BLOCK (CRITICAL):
 
-1. What will likely go wrong in this situation?
-2. Why does it happen?
+personal_block must feel like a real expert response to this specific order.
+
+It must include:
+
+- at least one situation-specific observation
+- grounded in parsed order data, explicit client requirements, or reasonable practical implications of the request
+- practical reasoning (not abstract phrases)
+
+---
+
+THINK BEFORE WRITING personal_block:
+
+1. What is specific about this order?
+2. What could realistically go wrong?
 3. What would an experienced professional do differently?
 
-If you cannot identify a concrete problem — output is invalid.
+---
+
+STYLE (personal_block):
+
+- human
+- concrete
+- situation-aware
+- not marketing
+- not generic
 
 ---
 
-STYLE:
+IMPORTANT:
 
-- Write like a human expert
-- Write like you are replying personally
-- Not like a website
-- Not like marketing
+Do NOT invent dramatic problems if the order is simple.
 
----
-
-DO:
-
-- Refer to the exact situation
-- Mention real risks or mistakes
-- Give a practical way to handle it
-- Be specific
+Instead, highlight:
+- subtle risks
+- overlooked details
+- practical nuances
 
 ---
 
-DO NOT:
+OTHER FIELDS:
 
-- Describe services
-- Use generic phrases
-- Write abstract text
-- Write like a portfolio
+Generate all required fields according to the provided schema.
 
----
+Rules:
 
-FIELD DEFINITIONS:
-
-request_match:
-Show that you understood the exact situation
-
-key_feature:
-Explain what usually goes wrong AND what to do instead
-
-trust_line:
-Short insight from experience
-
-hook_line:
-Specific interesting detail (not a question)
+- keep them minimal but valid
+- do not leave required fields empty
+- quick_questions must contain at least one item
 
 ---
 
 SELF-CHECK:
 
-Before finalizing:
+- is personal_block specific to this order?
+- does it include a real observation?
+- is it non-generic?
 
-- Is this generic?
-- Can it apply to another order?
-- Is there a real problem described?
-
-If yes — rewrite.
+If not — rewrite.
 
 ---
 
-Return ONLY valid JSON matching LandingPageModel.
+OUTPUT:
+
+Return a valid JSON object matching LandingPageModel schema.
 """
-
-
-_TEMPLATE_MAP: dict[str, str] = {
-    "registry": "registry_small",
-    "wedding": "wedding_full",
-    "family": "family_session",
-    "event": "event_general",
-    "portrait": "family_session",
-    "other": "registry_small",
-}
-
-
-class LandingGeneratorService:
-    def generate(
-        self,
-        parsed_order: ParsedOrder,
-        photographer_name: str = "Алексей",
-        price: str | None = None,
-    ) -> LandingPageModel:
-
-        user_message = self._build_user_message(parsed_order, photographer_name, price)
-
-        raw = openai_client.extract_json(
-            system_prompt=SYSTEM_PROMPT,
-            user_message=user_message,
-            temperature=0.5,
-            max_tokens=1200,
-        )
-
-        cleaned = self._post_process(raw, parsed_order)
-
-        try:
-            model = LandingPageModel.model_validate(cleaned)
-        except Exception as exc:
-            logger.error("Landing validation failed: %s | raw: %s", exc, cleaned)
-            raise ValueError(f"Invalid LandingPageModel: {exc}") from exc
-
-        return model
-
-    # ─────────────────────────────────────────
-
-    def _build_user_message(
-        self,
-        o: ParsedOrder,
-        photographer_name: str,
-        price: str | None,
-    ) -> str:
-        proposed_price = price or (f"до {o.budget_max} ₽" if o.budget_max else "не указана")
-
-        return f"""
-client_label: {o.client_label or o.client_name or 'клиент'}
-event_type: {o.event_type or ''}
-event_subtype: {o.event_subtype or ''}
-date: {o.date_text or ''}
-city: {o.city or ''}
-location: {o.location or ''}
-duration: {o.duration_text or ''}
-guest_count: {o.guest_count_text or ''}
-
-requirements: {', '.join(o.requirements) if o.requirements else ''}
-priority_signals: {', '.join(o.priority_signals) if o.priority_signals else ''}
-
-client_intent_line: {o.client_intent_line or ''}
-situation_notes: {o.situation_notes or ''}
-shoot_feel: {o.shoot_feel or ''}
-
-photographer_name: {photographer_name}
-price: {proposed_price}
-"""
-
-    # ─────────────────────────────────────────
-
-    def _post_process(
-        self,
-        raw: dict[str, Any],
-        parsed_order: ParsedOrder,
-    ) -> dict[str, Any]:
-
-        result = dict(raw)
-
-        # slug
-        result["slug"] = self._safe_slug(result.get("slug", ""), parsed_order)
-
-        # template fallback
-        if not result.get("template_key"):
-            event_type = (parsed_order.event_type or "other").lower()
-            result["template_key"] = _TEMPLATE_MAP.get(event_type, "registry_small")
-
-        return result
-
-    # ─────────────────────────────────────────
-
-    def _safe_slug(self, raw: str, parsed_order: ParsedOrder) -> str:
-        if raw and re.match(r'^[a-z0-9\-]+$', raw):
-            return raw[:60]
-
-        parts = []
-
-        if parsed_order.client_name:
-            parts.append(parsed_order.client_name.lower())
-
-        if parsed_order.event_type:
-            parts.append(parsed_order.event_type)
-
-        if parsed_order.date_text:
-            parts.append(parsed_order.date_text)
-
-        slug = "-".join(parts)
-        slug = re.sub(r'[^a-z0-9\-]+', '-', slug.lower())
-        slug = re.sub(r'-+', '-', slug).strip('-')
-
-        return slug[:60] or "landing"
