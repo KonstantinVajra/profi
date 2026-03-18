@@ -73,7 +73,7 @@ class OrderParserService:
             temperature=0.1,
             max_tokens=800,
         )
-
+        logger.error("DEBUG raw extract_json output: %s", raw_dict)
         # 2. post-process
         cleaned = self._post_process(raw_dict)
 
