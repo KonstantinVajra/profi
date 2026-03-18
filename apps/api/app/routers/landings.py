@@ -82,7 +82,7 @@ def generate_landing(
         shoot_feel=parsed_order_record.shoot_feel,
     )
 
-    # 3. generate
+    # 3. generate — controlled error handling
     try:
         landing_model = landing_generator_service.generate(
             parsed_order=parsed_order,
@@ -91,10 +91,20 @@ def generate_landing(
             case_series_id=body.case_series_id,
         )
     except ValueError as exc:
-        logger.error("Landing generation failed | project=%s | error=%s", project_id, exc)
+        logger.error(
+            "Landing generation failed | project=%s | error=%s", project_id, exc
+        )
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Landing generation failed: {exc}",
+        )
+    except Exception:
+        logger.exception(
+            "Landing generation unexpected error | project=%s", project_id
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Landing generation failed due to an internal error. Please retry.",
         )
 
     # 4. replace previous landing
