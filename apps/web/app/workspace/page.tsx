@@ -7,7 +7,11 @@ import {
   generateLanding,
   generateReplies,
   suggestDialogueReply,
+  getPhotoSets,
+  uploadPhotos,
+  createPresetAlbum,
 } from "@/lib/api";
+import type { PhotoSet } from "@/types/photo";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -55,6 +59,16 @@ export default function WorkspacePage() {
   const [suggestion, setSuggestion] = useState<SuggestionData | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
+  // photo state
+  const [photoSets, setPhotoSets] = useState<PhotoSet[]>([]);
+  const [selectedPhotoSetId, setSelectedPhotoSetId] = useState<string | null>(null);
+  const [manualFiles, setManualFiles] = useState<File[]>([]);
+  const [photoSetsLoaded, setPhotoSetsLoaded] = useState(false);
+  // preset album creation
+  const [newAlbumName, setNewAlbumName] = useState("");
+  const [newAlbumFiles, setNewAlbumFiles] = useState<File[]>([]);
+  const [albumCreating, setAlbumCreating] = useState(false);
+
   async function copyToClipboard(text: string, id: string) {
     try {
       if (navigator.clipboard && window.isSecureContext) {
@@ -78,6 +92,35 @@ export default function WorkspacePage() {
     }
   }
 
+  // ── Photo helpers ────────────────────────────────────────────────────────
+
+  async function loadPhotoSets() {
+    if (photoSetsLoaded) return;
+    try {
+      const sets = await getPhotoSets() as PhotoSet[];
+      setPhotoSets(sets);
+      setPhotoSetsLoaded(true);
+    } catch {
+      // non-critical — workspace still usable without photo sets
+    }
+  }
+
+  async function handleCreateAlbum() {
+    if (!newAlbumName.trim() || newAlbumFiles.length === 0) return;
+    setAlbumCreating(true);
+    try {
+      await createPresetAlbum(newAlbumName.trim(), newAlbumFiles);
+      setNewAlbumName("");
+      setNewAlbumFiles([]);
+      setPhotoSetsLoaded(false);
+      await loadPhotoSets();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Album creation failed");
+    } finally {
+      setAlbumCreating(false);
+    }
+  }
+
   // ── Step 1-4: generate everything ───────────────────────────────────────
 
   async function handleGenerate() {
@@ -98,8 +141,13 @@ export default function WorkspacePage() {
       const parsed = await extractOrder(project.id, orderText) as ParsedOrderData;
       setParsedOrder(parsed);
 
-      // 3. generate landing
-      const landingResult = await generateLanding(project.id) as LandingData;
+      // 3. generate landing — resolve photo set
+      let resolvedPhotoSetId: string | undefined = selectedPhotoSetId ?? undefined;
+      if (!resolvedPhotoSetId && manualFiles.length > 0) {
+        const uploadResult = await uploadPhotos(project.id, manualFiles);
+        resolvedPhotoSetId = uploadResult.photo_set_id;
+      }
+      const landingResult = await generateLanding(project.id, resolvedPhotoSetId) as LandingData;
       setLanding(landingResult);
 
       // 4. generate replies with real landing URL
@@ -146,6 +194,94 @@ export default function WorkspacePage() {
             {error}
           </div>
         )}
+
+        {/* Block Photos — Album selector */}
+        <section className="bg-white rounded-2xl p-6 shadow-sm">
+          <h2 className="text-base font-semibold mb-3">Фото для лендинга</h2>
+
+          {/* Preset albums */}
+          <div className="mb-4">
+            <button
+              onClick={loadPhotoSets}
+              className="text-sm text-blue-600 underline mb-2 block"
+            >
+              Загрузить альбомы
+            </button>
+            {photoSets.length > 0 && (
+              <div className="space-y-1">
+                <p className="text-xs text-gray-400 mb-1">Выберите альбом:</p>
+                {photoSets.map((ps) => (
+                  <label key={ps.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="radio"
+                      name="photoSet"
+                      value={ps.id}
+                      checked={selectedPhotoSetId === ps.id}
+                      onChange={() => { setSelectedPhotoSetId(ps.id); setManualFiles([]); }}
+                    />
+                    {ps.name ?? ps.id}
+                    <span className="text-xs text-gray-400">({ps.items.length} фото)</span>
+                  </label>
+                ))}
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="radio"
+                    name="photoSet"
+                    value=""
+                    checked={selectedPhotoSetId === null}
+                    onChange={() => setSelectedPhotoSetId(null)}
+                  />
+                  Без альбома
+                </label>
+              </div>
+            )}
+          </div>
+
+          {/* Manual upload */}
+          {selectedPhotoSetId === null && (
+            <div className="mb-4">
+              <p className="text-xs text-gray-400 mb-1">Или загрузите фото вручную:</p>
+              <input
+                type="file"
+                multiple
+                accept="image/*"
+                className="text-sm"
+                onChange={(e) => setManualFiles(Array.from(e.target.files ?? []))}
+              />
+              {manualFiles.length > 0 && (
+                <p className="text-xs text-gray-500 mt-1">{manualFiles.length} файл(ов) выбрано</p>
+              )}
+            </div>
+          )}
+
+          {/* Create preset album */}
+          <details className="mt-2">
+            <summary className="text-xs text-gray-400 cursor-pointer">Добавить новый альбом</summary>
+            <div className="mt-2 space-y-2">
+              <input
+                type="text"
+                placeholder="Название альбома"
+                value={newAlbumName}
+                onChange={(e) => setNewAlbumName(e.target.value)}
+                className="w-full border rounded-lg px-3 py-1.5 text-sm"
+              />
+              <input
+                type="file"
+                multiple
+                accept="image/*"
+                className="text-sm"
+                onChange={(e) => setNewAlbumFiles(Array.from(e.target.files ?? []))}
+              />
+              <button
+                onClick={handleCreateAlbum}
+                disabled={albumCreating || !newAlbumName.trim() || newAlbumFiles.length === 0}
+                className="bg-gray-800 text-white rounded-lg px-4 py-1.5 text-sm disabled:opacity-40"
+              >
+                {albumCreating ? "Сохраняем..." : "Создать альбом"}
+              </button>
+            </div>
+          </details>
+        </section>
 
         {/* Block A — Order Input */}
         <section className="bg-white rounded-2xl p-6 shadow-sm">

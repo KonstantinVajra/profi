@@ -38,10 +38,10 @@ export const generateReplies = (projectId: string, landingUrl?: string) =>
   });
 
 // ── Landing ───────────────────────────────────────────────────────────────
-export const generateLanding = (projectId: string) =>
+export const generateLanding = (projectId: string, photoSetId?: string) =>
   request(`/projects/${projectId}/landing/generate`, {
     method: "POST",
-    body: JSON.stringify({}),
+    body: JSON.stringify({ photo_set_id: photoSetId ?? null }),
   });
 
 export const getLandingBySlug = (slug: string) =>
@@ -53,3 +53,37 @@ export const suggestDialogueReply = (projectId: string, messageText: string) =>
     method: "POST",
     body: JSON.stringify({ message_text: messageText, source_channel: "profi" }),
   });
+
+// ── Photos ────────────────────────────────────────────────────────────────
+export const getPhotoSets = () =>
+  request("/photo-sets");
+
+export const getPhotoSet = (photoSetId: string) =>
+  request(`/photo-sets/${photoSetId}`);
+
+export const uploadPhotos = (projectId: string, files: File[]) => {
+  const form = new FormData();
+  files.forEach((f) => form.append("files", f));
+  const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+  return fetch(`${BASE}/projects/${projectId}/photos/upload`, {
+    method: "POST",
+    body: form,
+  }).then((res) => {
+    if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
+    return res.json() as Promise<{ photo_set_id: string }>;
+  });
+};
+
+export const createPresetAlbum = (name: string, files: File[]) => {
+  const form = new FormData();
+  form.append("name", name);
+  files.forEach((f) => form.append("files", f));
+  const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+  return fetch(`${BASE}/photo-sets/preset`, {
+    method: "POST",
+    body: form,
+  }).then((res) => {
+    if (!res.ok) throw new Error(`Create album failed: ${res.status}`);
+    return res.json() as Promise<{ photo_set_id: string; name: string }>;
+  });
+};

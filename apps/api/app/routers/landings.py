@@ -26,6 +26,7 @@ from app.schemas.landing import (
 from app.schemas.order import ParsedOrder
 from app.repositories.landing_repo import LandingRepository
 from app.services.landing_generator_service import landing_generator_service
+from app.services.landing_photo_service import snapshot_photo_set
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -107,21 +108,53 @@ def generate_landing(
             detail="Landing generation failed due to an internal error. Please retry.",
         )
 
-    # 4. replace previous landing
-    repo.delete_existing_landing(project_id)
+    # 3b. snapshot photos if photo_set_id was provided — must happen before saving content
+    if body.photo_set_id:
+        try:
+            snapshot_id = snapshot_photo_set(body.photo_set_id, db)
+            # inject snapshot id so content_json carries the landing-owned set
+            landing_model = landing_model.model_copy(
+                update={"style_grid": landing_model.style_grid.model_copy(
+                    update={"photo_set_id": snapshot_id}
+                )}
+            )
+            logger.info(
+                "Photo snapshot injected | project=%s | snapshot=%s",
+                project_id, snapshot_id,
+            )
+        except (ValueError, RuntimeError) as exc:
+            logger.error(
+                "Photo snapshot failed | project=%s | error=%s", project_id, exc
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Photo snapshot failed: {exc}",
+            )
 
-    # 5. save page metadata
-    page = repo.create_landing_page(
-        project_id=project_id,
-        slug=landing_model.slug,
-        template_key=landing_model.template_key,
-    )
+    # 4-6. replace landing + save — wrapped together so DB stays consistent if save fails.
+    # Note: if snapshot succeeded but save fails, snapshot photo_sets/items are rolled back
+    # by db.rollback(), but files on disk are NOT cleaned up (filesystem is not transactional).
+    # filesystem cleanup is intentionally not handled in MVP.
+    try:
+        repo.delete_existing_landing(project_id)
 
-    # 6. save content JSON
-    repo.create_landing_content(
-        landing_page_id=page.id,
-        model=landing_model,
-    )
+        page = repo.create_landing_page(
+            project_id=project_id,
+            slug=landing_model.slug,
+            template_key=landing_model.template_key,
+        )
+
+        repo.create_landing_content(
+            landing_page_id=page.id,
+            model=landing_model,
+        )
+    except Exception:
+        db.rollback()
+        logger.exception("Landing save failed | project=%s", project_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to save landing after generation. Please retry.",
+        )
 
     # 7. return
     return LandingGenerateResponse(
