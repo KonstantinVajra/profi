@@ -373,6 +373,21 @@ class LandingGeneratorService:
     def _generate_semantic_draft(self, parsed_order: ParsedOrder) -> _SemanticDraft:
         user_message = self._build_order_context(parsed_order)
 
+        _step1_messages = [
+            {"role": "system", "content": _SEMANTIC_DRAFT_PROMPT},
+            {"role": "user",   "content": user_message},
+        ]
+        logger.warning(
+            "STEP1 OUTBOUND | model=%s | system_len=%d | user_len=%d"
+            "\n--- SYSTEM ---\n%s"
+            "\n--- USER ---\n%s",
+            openai_client._model,
+            len(_step1_messages[0]["content"]),
+            len(_step1_messages[1]["content"]),
+            _step1_messages[0]["content"],
+            _step1_messages[1]["content"],
+        )
+
         try:
             text = openai_client.extract_text(
                 system_prompt=_SEMANTIC_DRAFT_PROMPT,
