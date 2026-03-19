@@ -40,6 +40,8 @@ from app.services.openai_client import openai_client
 
 logger = logging.getLogger(__name__)
 
+_SERVICE_VERSION = "diag-v1"
+
 _PACKAGING_PROMPT_PATH = (
     Path(__file__).resolve()
     .parent           # services/
@@ -362,6 +364,7 @@ class LandingGeneratorService:
         photo_set_id: str | None = None,
         case_series_id: str | None = None,
     ) -> LandingPageModel:
+        logger.warning("LandingGeneratorService.generate() | version=%s", _SERVICE_VERSION)
         draft = self._generate_semantic_draft(parsed_order)
         return self._generate_landing_json(
             parsed_order, draft, photographer_name, price, photo_set_id, case_series_id
@@ -381,9 +384,9 @@ class LandingGeneratorService:
             logger.error("STEP1 FAILED — returning empty draft: %s", exc)
             return _SemanticDraft()
 
-        logger.info("STEP1 RAW OUTPUT:\n%s", text)
+        logger.warning("STEP1 RAW OUTPUT:\n%s", text)
         draft = self._parse_semantic_draft(text)
-        logger.info(
+        logger.warning(
             "Semantic draft parsed | hero=%r | steps=%r | next=%r | hook=%r",
             draft.hero_subtitle,
             draft.work_steps,
@@ -409,6 +412,8 @@ class LandingGeneratorService:
         if not blocks:
             logger.warning("Semantic draft parser found no blocks in AI output")
             return _SemanticDraft()
+
+        logger.warning("Semantic draft detected blocks: %s", list(blocks.keys()))
 
         hook_key = blocks.get("HOOK_KEY", "").strip().lower()
         if hook_key:
@@ -546,6 +551,13 @@ class LandingGeneratorService:
             if draft.case_title:
                 existing_similar_case["title"] = draft.case_title
             result["similar_case"] = existing_similar_case
+
+        logger.warning(
+            "Inject summary | hero.subtitle=%r | work_block.steps=%r | similar_case.description=%r",
+            result.get("hero", {}).get("subtitle"),
+            result.get("work_block", {}).get("steps"),
+            result.get("similar_case", {}).get("description") if isinstance(result.get("similar_case"), dict) else None,
+        )
 
         return result
 
