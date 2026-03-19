@@ -371,7 +371,11 @@ class LandingGeneratorService:
         )
 
     def _generate_semantic_draft(self, parsed_order: ParsedOrder) -> _SemanticDraft:
-        user_message = self._build_order_context(parsed_order)
+        user_message = (
+            self._build_order_context(parsed_order)
+            + "\n\n"
+            + "Верни ответ строго в формате с блоками [HERO] [NUANCE] [TIP] [TRUST] [HOOK_KEY] [NEXT]. Без текста вне блоков."
+        )
 
         _step1_messages = [
             {"role": "system", "content": _SEMANTIC_DRAFT_PROMPT},
@@ -578,7 +582,8 @@ class LandingGeneratorService:
 
     def _build_order_context(self, o: ParsedOrder) -> str:
         return "\n".join([
-            f"client_label: {o.client_label or o.client_name or 'клиент'}",
+            f"client_name: {o.client_name or ''}",
+            f"client_label: {o.client_label or ''}",
             f"event_type: {o.event_type or ''}",
             f"event_subtype: {o.event_subtype or ''}",
             f"date_text: {o.date_text or ''}",
