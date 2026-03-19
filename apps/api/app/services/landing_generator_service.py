@@ -375,20 +375,29 @@ class LandingGeneratorService:
                 system_prompt=_SEMANTIC_DRAFT_PROMPT,
                 user_message=user_message,
                 temperature=0.7,
-                max_tokens=600,
+                max_tokens=900,
             )
         except Exception as exc:
-            logger.warning("Semantic draft step failed — proceeding without draft: %s", exc)
+            logger.error("STEP1 FAILED — returning empty draft: %s", exc)
             return _SemanticDraft()
 
-        return self._parse_semantic_draft(text)
+        logger.info("STEP1 RAW OUTPUT:\n%s", text)
+        draft = self._parse_semantic_draft(text)
+        logger.info(
+            "Semantic draft parsed | hero=%r | steps=%r | next=%r | hook=%r",
+            draft.hero_subtitle,
+            draft.work_steps,
+            draft.case_description,
+            draft.hook_key,
+        )
+        return draft
 
     def _parse_semantic_draft(self, text: str) -> _SemanticDraft:
         if not text or not text.strip():
             logger.warning("Semantic draft parser received empty text")
             return _SemanticDraft()
 
-        pattern = re.compile(r'\[([A-Z_]+)\]', re.IGNORECASE)
+        pattern = re.compile(r"\[\s*([A-Z_]+)\s*\]", re.IGNORECASE)
         parts = pattern.split(text)
 
         blocks: dict[str, str] = {}
