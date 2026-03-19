@@ -8,15 +8,20 @@ RULE: AI generates JSON only. Never HTML.
 Pipeline (two-step):
   STEP 1 — semantic draft
     _generate_semantic_draft(parsed_order) → _SemanticDraft
-    Focused on quality of thought: hero subtitle, work context, similar case.
-    Private dataclass — not a public contract, not persisted.
+    AI returns free-form text with labelled blocks [HERO]..[NEXT].
+    Deterministic Python parser extracts blocks into _SemanticDraft.
+    Block positions are fixed: TIP→0, NUANCE→1, TRUST→2.
     Falls back to empty draft on any failure so step 2 can still proceed.
 
-  STEP 2 — JSON packaging
+  STEP 2 — JSON packaging (technical layer)
     _generate_landing_json(parsed_order, draft, ...) → LandingPageModel
-    Focused on schema correctness.
-    SemanticDraft fields are injected deterministically in code after AI output
-    and before validation — not relying on prompt instructions alone.
+    Generates structural fields only: slug, template_key, hero.title,
+    price_card, style_grid, quick_questions, cta, badges, photographer.
+    Semantic fields are stripped from Step 2 output before injection.
+    Step 1 parser is the sole author of semantic text.
+
+Source priority:
+  Step 1 parser output > Step 2 AI output > _post_process defaults
 
 No DB access. No HTTP. Receives ParsedOrder + overrides, returns LandingPageModel.
 """
@@ -47,248 +52,244 @@ _PACKAGING_PROMPT_PATH = (
 
 # ── Step 1 prompt — semantic quality, not schema ──────────────────────────
 _SEMANTIC_DRAFT_PROMPT = """\
-Инструкции для ассистента
+Ты — AI-ассистент фотографа.
 
-Ты — AI-ассистент фотографа, который пишет живые отклики на заказы. Твоя задача — превращать сухой заказ в понятный, человеческий и полезный ответ.
+Твоя задача — написать короткий, точный, живой отклик на заказ клиента.
 
-Текст должен давать клиенту ощущение:
-- фотограф понял мой запрос;
-- он видит мою ситуацию;
-- он знает, где обычно бывает проблема;
-- он может подсказать что-то полезное;
-- ему можно написать дальше.
+Ты НЕ пишешь JSON.  
+Ты НЕ думаешь о фронтенде.  
+Ты НЕ думаешь о структуре сайта.  
 
-Главная цель
+Ты пишешь человеческий отклик, который потом будет разобран системой.
 
-Писать не шаблон “готов снять”, а короткий живой разбор конкретного заказа + одну полезную мысль + лёгкое вовлечение.
+---
 
-Хороший отклик повышает шанс, что клиент:
-- откроет страницу;
-- ответит;
-- задаст вопрос;
-- продолжит диалог.
+## ФОРМАТ ВЫХОДА (СТРОГО ОБЯЗАТЕЛЕН)
 
-Что ты делаешь
+Ты ОБЯЗАН вернуть текст строго в таком формате:
 
-По тексту заказа ты должен:
-- понять, что реально хочет клиент;
-- уловить формат съёмки;
-- определить важный нюанс ситуации;
-- написать отклик как опытный фотограф;
-- дать одну полезную практическую мысль;
-- мягко подвести к следующему шагу.
+[HERO]
+...
 
-Как должен звучать отклик
+[NUANCE]
+...
 
-Отклик должен быть:
-- живым;
-- спокойным и уверенным;
-- без пафоса;
-- без копирайтерщины;
-- без “нейросетевой сладости”.
+[TIP]
+...
 
-Это не рекламный текст, не лендинг и не описание услуг. Это реакция на конкретный заказ.
+[TRUST]
+...
 
-Главный принцип
+[HOOK_KEY]
+...
 
-Не пиши “блоки ради блоков”. Объясняй одну конкретную ситуацию.
+[NEXT]
+...
 
-Каждый хороший отклик строится вокруг одной линии:
-- что происходит у клиента;
-- что здесь обычно идёт не так;
-- что лучше сделать;
-- почему это важно.
+---
 
-Если текст распадается на общие мысли, он плохой.
+### ЖЁСТКИЕ ПРАВИЛА ФОРМАТА
 
-Внутренняя структура
+- Нельзя менять названия блоков  
+- Нельзя менять порядок блоков  
+- Нельзя пропускать блоки  
+- Нельзя добавлять новые блоки  
+- Нельзя писать текст вне блоков  
 
-Перед ответом молча собери внутри себя такую опору:
+Если формат нарушен — ответ считается неправильным.
 
-1. Central angle
-Одна главная мысль, вокруг которой строится отклик. Не пересказ заказа, а основной угол ответа.
-Примеры: короткая регистрация — значит решает ритм и близость точек; семейная съёмка с ребёнком — значит решает темп и отсутствие давления.
+---
 
-2. Situation nuance
-Один конкретный нюанс ситуации, который реально влияет на результат. Не общий совет.
-Примеры: после регистрации гости быстро расходятся; короткая прогулка съедается переездами; если пара не любит позировать, первые минуты решают весь настрой.
+## ГЛАВНЫЙ ПРИНЦИП
 
-3. Practical tip
-Одна полезная практическая фишка, привязанная к заказу. Она должна менять поведение клиента и звучать как опыт.
-Плохо: “важно учитывать детали”, “лучше всё заранее продумать”.
-Хорошо: “если съёмка короткая, лучше взять 1–2 точки рядом, а не ехать через полгорода”.
+Ты не пишешь "отклик фотографа".
 
-4. Trust line
-Короткое наблюдение из опыта, чтобы чувствовалось: человек это видел не один раз.
-Примеры: “в коротких съёмках ритм решает почти всё”, “чаще всего проблема не во времени, а в суете”.
+Ты объясняешь ОДНУ конкретную ситуацию.
 
-5. Hook
-Небольшой крючок, который оставляет ощущение, что есть ещё важная деталь.
-Примеры: “там есть один момент, который лучше продумать заранее”, “обычно именно это недооценивают”.
+Весь текст должен идти по одной линии:
 
-6. Soft next step
-Мягкий финал без давления.
-Примеры: “могу показать похожую съёмку”, “могу подсказать, как лучше собрать маршрут”, “если хотите, скину пример тайминга”.
+- что происходит у клиента  
+- где в этом формате обычно проблема  
+- что лучше сделать  
+- почему это важно  
+- чем можно помочь  
 
-Эту структуру не нужно показывать отдельно. Она нужна как внутренняя опора. Снаружи ответ должен звучать как цельное живое сообщение.
+Если появляются лишние темы — это ошибка.
 
-Формула хорошего отклика
+---
 
-Внутри ответа естественно должны присутствовать:
-- попадание в заказ;
-- нюанс ситуации;
-- одна фишка;
-- короткая строка доверия;
-- крючок;
-- мягкий следующий шаг.
+## ПРАВИЛО ОДНОЙ МЫСЛИ
 
-Как писать попадание в заказ
+В отклике должен быть ОДИН основной нюанс ситуации.
 
-Не пересказывай заказ тупо.
+Не несколько.  
+Не список.  
+Один.
+
+---
+
+## HERO (ПОПАДАНИЕ В ЗАКАЗ)
+
+Ты обязан начать с обращения.
+
+ЕСЛИ есть имя:
+используй имя в первой строке
+
+Пример:
+Анна, посмотрел ваш запрос...
+
+ЕСЛИ имени нет:
+Посмотрел ваш запрос...
+
+---
+
+### В HERO ОБЯЗАТЕЛЬНО:
+
+- 1–2 конкретные детали заказа  
+- живая формулировка ситуации  
+
+---
+
+### ЗАПРЕЩЕНО:
+
+- пересказывать заказ списком  
+- писать обобщённо  
+- игнорировать имя  
+
+---
+
+## NUANCE
+
+Один конкретный момент, где обычно возникает проблема.
 
 Плохо:
-“Вам нужна свадебная съёмка на 3 часа”.
+- важно учитывать детали  
 
 Хорошо:
-“Антонина, посмотрел ваш запрос — регистрация и потом короткая прогулка вдвоём”.
+- в коротких съёмках время уходит на перемещения  
 
-Нужно показать, что ты понял контекст и сразу в теме.
+---
 
-Стиль
+## TIP (САМОЕ ВАЖНОЕ)
+
+Одна практическая рекомендация.
+
+Обязательно:
+
+- что делать  
+- когда делать  
+- как это выглядит  
+
+---
+
+### ПЛОХО:
+
+- лучше всё продумать  
+
+### ХОРОШО:
+
+- лучше выбрать 1–2 точки рядом и не ездить между локациями  
+
+---
+
+## TRUST
+
+Одна короткая фраза из опыта.
+
+Без самопрезентации.
+
+Примеры:
+
+- в коротких съёмках ритм решает почти всё  
+- чаще всего проблема не во времени, а в суете  
+
+---
+
+## HOOK_KEY
+
+Ты НЕ пишешь текст.
+
+Ты выбираешь ОДИН ключ из списка:
+
+timing  
+movement  
+restrictions  
+lighting  
+emotion_flow  
+location_spot  
+preparation  
+
+Верни только ключ.  
+Без пояснений.  
+
+---
+
+## NEXT
+
+Мягкое продолжение.
+
+Без давления.
+
+Примеры:
+
+- могу подсказать маршрут  
+- могу накидать точки рядом  
+- могу показать похожую съёмку  
+
+---
+
+## ЗАПРЕЩЕНО
+
+Никогда не использовать:
+
+- индивидуальный подход  
+- сохраняю эмоции  
+- важные моменты  
+- работаю с душой  
+- учту все пожелания  
+- качественная съёмка  
+
+Если фраза подходит к любому заказу — она плохая.
+
+---
+
+## СТИЛЬ
 
 Пиши:
-- живо;
-- коротко;
-- по-человечески;
-- уверенно;
-- с лёгкой разговорностью;
-- как практик.
 
-Допускаются тёплый тон, лёгкая ирония, спокойная уверенность.
+- спокойно  
+- коротко  
+- по-человечески  
+- без пафоса  
 
-Не допускаются:
-- канцелярит;
-- формальная сухость;
-- приторность;
-- агрессивная продажа;
-- пафос.
+Не пытайся "улучшать" текст.  
+Если можно сказать проще — говори проще.
 
-Запрещённые формулировки
+---
 
-Никогда не используй штампы:
-- индивидуальный подход;
-- сохраняю ваши эмоции;
-- важные моменты вашего дня;
-- особенная атмосфера;
-- работаю с душой;
-- учту все пожелания;
-- помогу сохранить воспоминания;
-- качественная услуга;
-- запечатлеть каждую деталь.
+## САМОПРОВЕРКА
 
-Также избегай фраз:
-- это очень важно;
-- важно всё заранее продумать;
-- главное — атмосфера;
-- нужно просто расслабиться;
-- всё будет красиво;
-- каждая деталь имеет значение.
+Перед ответом проверь:
 
-Если фраза подходит почти к любому заказу — она плохая.
-
-Плохой отклик
-
-Плохой текст — это тот, который:
-- можно вставить в любой заказ;
-- похож на рекламу;
-- говорит о фотографе больше, чем о клиенте;
-- не даёт пользы;
-- состоит из общих слов;
-- не вызывает желания ответить.
-
-Хороший отклик
-
-Хороший текст — это когда клиент думает:
-- “да, он понял, что мне нужно”;
-- “вот это полезно”;
-- “нормально объяснил”;
-- “спрошу у него дальше”.
-
-Формат ответа по умолчанию
-
-Если пользователь просит отклик, делай его как цельное сообщение, внутри которого есть:
-- короткое обращение;
-- попадание в заказ;
-- один нюанс ситуации;
-- одна фишка;
-- короткий крючок;
-- мягкий следующий шаг.
-
-Не пиши это списком.
-
-Если данных мало
-
-- не выдумывай;
-- не дорисовывай факты;
-- опирайся только на известное;
-- делай фишку безопасной и применимой.
-
-Лучше дать нейтральный, но рабочий нюанс формата, чем фантазировать.
-
-Если данных много
-
-- не пересказывай всё подряд;
-- вычленяй главное;
-- выбирай одну сильную линию;
-- не пытайся ответить на всё сразу.
-
-Один сильный угол лучше пяти слабых мыслей.
-
-Если клиент тревожный
-
-Сначала снизь тревогу, потом дай одну конкретную опору. Не дави и не продавай жёстко.
-
-Если клиент спрашивает странно или раздражает
-
-Никогда не груби. Переводи это в спокойное объяснение, простую практическую мысль и уважительный ответ.
-
-Финальное правило
-
-Ты пишешь не “правильный текст”, а понятный отклик, после которого хочется продолжить разговор.
-
-Не лендинг. Не статью. Не рекламную подачу.
-А человеческий, полезный и конкретный ответ по ситуации клиента.
-
-Внутренний чек перед ответом
-
-Перед выдачей текста проверь:
-- я попал в конкретный заказ;
-- у меня есть один central angle;
-- я нашёл реальный нюанс, а не общий совет;
-- у меня есть одна конкретная фишка;
-- есть ощущение живого опыта;
-- после текста хочется написать дальше;
-- этот текст нельзя безболезненно вставить в другой заказ.
+- есть ли все 6 блоков  
+- есть ли имя (если было)  
+- есть ли конкретика  
+- есть ли один нюанс  
+- есть ли одна практическая фишка  
+- нет ли банальщины  
 
 Если нет — перепиши.
 
-Верни только JSON с полями:
-- hero_subtitle
-- work_step_1
-- work_step_2
-- work_step_3
-- case_title
-- case_description
+---
 
-Заполняй поля так:
-- hero_subtitle: 1 короткое предложение с главной практической мыслью ситуации
-- work_step_1: первый реальный момент съёмки, конкретно
-- work_step_2: где обычно проблема и как её решать
-- work_step_3: что происходит после или что важно завершить
-- case_title: короткое название похожей ситуации с одной деталью
-- case_description: 1 предложение с живым наблюдением из опыта
+## ГЛАВНОЕ
 
-Верни только JSON.
+Это должен быть не "красивый текст".
+
+Это должно выглядеть как:
+
+человек понял ситуацию  
+и спокойно объяснил, что делать\
 """
 
 # ── Repair prompt for step 2 validation failure ───────────────────────────
@@ -307,7 +308,11 @@ cta must be an object: { "channels": ["telegram", "whatsapp"] }
 Return ONLY the corrected JSON object. Nothing else.
 """
 
-# Normalised event_type → template_key
+_VALID_HOOK_KEYS = frozenset({
+    "timing", "movement", "restrictions",
+    "lighting", "emotion_flow", "location_spot", "preparation",
+})
+
 _TEMPLATE_MAP: dict[str, str] = {
     "registry":  "registry_small",
     "wedding":   "wedding_full",
@@ -317,7 +322,6 @@ _TEMPLATE_MAP: dict[str, str] = {
     "other":     "registry_small",
 }
 
-# Normalised event_type → default photo_set_id
 _PHOTO_SET_MAP: dict[str, str] = {
     "registry":  "registry_light",
     "wedding":   "wedding_outdoor",
@@ -334,16 +338,16 @@ class _SemanticDraft:
     Fields map directly to real LandingPageModel placement targets.
     Local to this service only — not a public contract, not persisted.
     """
-    hero_subtitle: str = ""       # → hero.subtitle
-    work_steps: list[str] = field(default_factory=list)  # → work_block.steps
-    case_title: str = ""          # → similar_case.title (only if both present)
-    case_description: str = ""    # → similar_case.description (only if both present)
+    hero_subtitle: str = ""
+    work_steps: list[str] = field(default_factory=lambda: ["", "", ""])
+    case_title: str = ""
+    case_description: str = ""
+    hook_key: str = ""
 
 
 class LandingGeneratorService:
 
     def _load_packaging_prompt(self) -> str:
-        """Load packaging prompt lazily at generation time."""
         if not _PACKAGING_PROMPT_PATH.exists():
             raise FileNotFoundError(
                 f"Landing packaging prompt not found: {_PACKAGING_PROMPT_PATH}"
@@ -358,66 +362,64 @@ class LandingGeneratorService:
         photo_set_id: str | None = None,
         case_series_id: str | None = None,
     ) -> LandingPageModel:
-        """
-        Generate LandingPageModel from ParsedOrder via two-step pipeline.
-
-        Step 1: semantic draft — quality of thought.
-        Step 2: JSON packaging — schema correctness + deterministic draft injection.
-
-        Returns:
-            Validated LandingPageModel.
-
-        Raises:
-            ValueError: if step 2 fails after repair retry.
-        """
-        # ── STEP 1: semantic draft ────────────────────────────────────────
         draft = self._generate_semantic_draft(parsed_order)
-
-        # ── STEP 2: JSON packaging ────────────────────────────────────────
         return self._generate_landing_json(
             parsed_order, draft, photographer_name, price, photo_set_id, case_series_id
         )
 
-    # ── private ───────────────────────────────────────────────────────────
-
     def _generate_semantic_draft(self, parsed_order: ParsedOrder) -> _SemanticDraft:
-        """
-        Step 1 — meaning generation.
-        Returns _SemanticDraft. Falls back to empty draft on any failure
-        so step 2 can still proceed (old single-step behaviour as fallback).
-        """
         user_message = self._build_order_context(parsed_order)
 
         try:
-            raw = openai_client.extract_json(
+            text = openai_client.extract_text(
                 system_prompt=_SEMANTIC_DRAFT_PROMPT,
                 user_message=user_message,
                 temperature=0.7,
-                max_tokens=500,
+                max_tokens=600,
             )
         except Exception as exc:
             logger.warning("Semantic draft step failed — proceeding without draft: %s", exc)
             return _SemanticDraft()
 
-        if not isinstance(raw, dict):
-            logger.warning("Semantic draft returned non-dict — proceeding without draft")
+        return self._parse_semantic_draft(text)
+
+    def _parse_semantic_draft(self, text: str) -> _SemanticDraft:
+        if not text or not text.strip():
+            logger.warning("Semantic draft parser received empty text")
             return _SemanticDraft()
 
-        # Collect work steps — only non-empty strings
+        pattern = re.compile(r'\[([A-Z_]+)\]', re.IGNORECASE)
+        parts = pattern.split(text)
+
+        blocks: dict[str, str] = {}
+        it = iter(parts[1:])
+        for key in it:
+            content = next(it, "").strip()
+            blocks[key.upper()] = content
+
+        if not blocks:
+            logger.warning("Semantic draft parser found no blocks in AI output")
+            return _SemanticDraft()
+
+        hook_key = blocks.get("HOOK_KEY", "").strip().lower()
+        if hook_key:
+            if hook_key in _VALID_HOOK_KEYS:
+                logger.debug("Step 1 hook_key: %s", hook_key)
+            else:
+                logger.warning("Step 1 returned unknown hook_key value: %r", hook_key)
+
         work_steps = [
-            s for s in [
-                raw.get("work_step_1") or "",
-                raw.get("work_step_2") or "",
-                raw.get("work_step_3") or "",
-            ]
-            if s.strip()
+            blocks.get("TIP", ""),
+            blocks.get("NUANCE", ""),
+            blocks.get("TRUST", ""),
         ]
 
         return _SemanticDraft(
-            hero_subtitle=raw.get("hero_subtitle") or "",
+            hero_subtitle=blocks.get("HERO", ""),
             work_steps=work_steps,
-            case_title=raw.get("case_title") or "",
-            case_description=raw.get("case_description") or "",
+            case_title="",
+            case_description=blocks.get("NEXT", ""),
+            hook_key=hook_key,
         )
 
     def _generate_landing_json(
@@ -429,17 +431,11 @@ class LandingGeneratorService:
         photo_set_id: str | None,
         case_series_id: str | None,
     ) -> LandingPageModel:
-        """
-        Step 2 — JSON packaging.
-        AI generates structural fields. SemanticDraft fields are injected
-        deterministically in code after AI output and before validation.
-        """
         packaging_prompt = self._load_packaging_prompt()
         user_message = self._build_packaging_message(
             parsed_order, photographer_name, price, photo_set_id, case_series_id
         )
 
-        # ── first attempt ─────────────────────────────────────────────────
         raw = openai_client.extract_json(
             system_prompt=packaging_prompt,
             user_message=user_message,
@@ -451,6 +447,18 @@ class LandingGeneratorService:
             raise ValueError(
                 f"Step 2 AI returned non-object response (type={type(raw).__name__})."
             )
+
+        if isinstance(raw.get("hero"), dict):
+            raw["hero"].pop("subtitle", None)
+        elif "hero" not in raw:
+            raw["hero"] = {}
+
+        if isinstance(raw.get("work_block"), dict):
+            raw["work_block"].pop("steps", None)
+
+        if isinstance(raw.get("similar_case"), dict):
+            raw["similar_case"].pop("description", None)
+            raw["similar_case"].pop("title", None)
 
         patched = self._inject_draft(raw, draft)
         cleaned = self._post_process(patched, parsed_order, photo_set_id)
@@ -464,7 +472,6 @@ class LandingGeneratorService:
                 "Landing validation failed on first attempt — retrying\n%s", str(exc)
             )
 
-        # ── one repair retry ──────────────────────────────────────────────
         repair_user = (
             f"Original context:\n{user_message}\n\n"
             f"Previous output that failed validation:\n{cleaned}"
@@ -481,6 +488,18 @@ class LandingGeneratorService:
             raise ValueError(
                 f"Repair attempt returned non-object response (type={type(raw2).__name__})."
             )
+
+        if isinstance(raw2.get("hero"), dict):
+            raw2["hero"].pop("subtitle", None)
+        elif "hero" not in raw2:
+            raw2["hero"] = {}
+
+        if isinstance(raw2.get("work_block"), dict):
+            raw2["work_block"].pop("steps", None)
+
+        if isinstance(raw2.get("similar_case"), dict):
+            raw2["similar_case"].pop("description", None)
+            raw2["similar_case"].pop("title", None)
 
         patched2 = self._inject_draft(raw2, draft)
         cleaned2 = self._post_process(patched2, parsed_order, photo_set_id)
@@ -500,40 +519,28 @@ class LandingGeneratorService:
     def _inject_draft(
         self, raw: dict[str, Any], draft: _SemanticDraft
     ) -> dict[str, Any]:
-        """
-        Deterministically inject SemanticDraft fields into the raw AI dict
-        before post-processing and validation.
-
-        Only injects when draft field is non-empty.
-        Never overwrites with empty values.
-        """
         result = dict(raw)
 
-        # hero.subtitle — inject if draft produced one
-        if draft.hero_subtitle:
-            if not isinstance(result.get("hero"), dict):
-                result["hero"] = {}
-            result["hero"]["subtitle"] = draft.hero_subtitle
+        if not isinstance(result.get("hero"), dict):
+            result["hero"] = {}
+        result["hero"]["subtitle"] = draft.hero_subtitle
 
-        # work_block.steps — inject if draft produced steps
-        # Safe fallback: if draft has fewer than 3 steps, pad with a neutral step
-        if draft.work_steps:
-            steps = list(draft.work_steps)
-            while len(steps) < 3:
-                steps.append("Финальная обработка и передача фото")
-            result["work_block"] = {"steps": steps[:3]}
+        if not isinstance(result.get("work_block"), dict):
+            result["work_block"] = {}
+        result["work_block"]["steps"] = list(draft.work_steps)
 
-        # similar_case — inject only when both title AND description are present
-        if draft.case_title and draft.case_description:
-            result["similar_case"] = {
-                "title": draft.case_title,
-                "description": draft.case_description,
-            }
+        if draft.case_description:
+            existing_similar_case = result.get("similar_case")
+            if not isinstance(existing_similar_case, dict):
+                existing_similar_case = {}
+            existing_similar_case["description"] = draft.case_description
+            if draft.case_title:
+                existing_similar_case["title"] = draft.case_title
+            result["similar_case"] = existing_similar_case
 
         return result
 
     def _build_order_context(self, o: ParsedOrder) -> str:
-        """Flat key-value block for step 1 semantic draft prompt."""
         return "\n".join([
             f"client_label: {o.client_label or o.client_name or 'клиент'}",
             f"event_type: {o.event_type or ''}",
@@ -556,7 +563,6 @@ class LandingGeneratorService:
         photo_set_id: str | None,
         case_series_id: str | None,
     ) -> str:
-        """User message for step 2 packaging prompt."""
         proposed_price = price or (f"до {o.budget_max} ₽" if o.budget_max else "не указана")
         lines = [
             f"client_label: {o.client_label or o.client_name or 'клиент'}",
@@ -586,22 +592,14 @@ class LandingGeneratorService:
         parsed_order: ParsedOrder,
         photo_set_id_override: str | None,
     ) -> dict[str, Any]:
-        """
-        Minimal structural repairs before Pydantic validation.
-        Only fixes missing or wrong-typed structural fields.
-        Never generates copy or overwrites non-empty valid values.
-        """
         result = dict(raw)
 
-        # ── slug ─────────────────────────────────────────────────────────
         result["slug"] = self._safe_slug(result.get("slug", ""), parsed_order)
 
-        # ── template_key ─────────────────────────────────────────────────
         if not result.get("template_key"):
             event_type = (parsed_order.event_type or "other").lower()
             result["template_key"] = _TEMPLATE_MAP.get(event_type, "registry_small")
 
-        # ── style_grid.photo_set_id ───────────────────────────────────────
         if not isinstance(result.get("style_grid"), dict):
             result["style_grid"] = {}
         if photo_set_id_override:
@@ -610,12 +608,10 @@ class LandingGeneratorService:
             event_type = (parsed_order.event_type or "registry").lower()
             result["style_grid"]["photo_set_id"] = _PHOTO_SET_MAP.get(event_type, "registry_light")
 
-        # ── list field defaults (schema requires list, never None) ────────
         for key in ("quick_questions", "reviews", "secondary_actions"):
             if not isinstance(result.get(key), list):
                 result[key] = []
 
-        # ── cta.channels ─────────────────────────────────────────────────
         if not isinstance(result.get("cta"), dict):
             result["cta"] = {}
         if not result["cta"].get("channels"):
@@ -624,11 +620,6 @@ class LandingGeneratorService:
         return result
 
     def _safe_slug(self, raw: str, parsed_order: ParsedOrder) -> str:
-        """
-        Ensure slug is URL-safe: lowercase, latin, hyphens only.
-        If AI returned an invalid slug, build one from ParsedOrder fields.
-        Falls back to a UUID-based slug if nothing is available.
-        """
         if raw and re.match(r'^[a-z0-9\-]+$', raw):
             return raw[:60]
 
@@ -660,7 +651,6 @@ class LandingGeneratorService:
 
     @staticmethod
     def _to_latin(text: str) -> str:
-        """Transliterate Russian to latin, keep digits, replace spaces with hyphens."""
         RU_TO_LATIN = {
             'а':'a','б':'b','в':'v','г':'g','д':'d','е':'e','ё':'e','ж':'zh',
             'з':'z','и':'i','й':'y','к':'k','л':'l','м':'m','н':'n','о':'o',
