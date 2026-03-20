@@ -14,11 +14,10 @@ Flow:
 """
 
 import logging
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.config import settings
 from app.schemas.landing import (
     LandingGenerateRequest,
     LandingGenerateResponse,
@@ -41,6 +40,7 @@ router = APIRouter()
 )
 def generate_landing(
     project_id: str,
+    request: Request,
     body: LandingGenerateRequest = None,
     db: Session = Depends(get_db),
 ):
@@ -160,10 +160,8 @@ def generate_landing(
         )
 
     # 7. return
-    logger.warning(
-        "DEBUG TRACE: %s/debug/project/%s",
-        settings.api_url.rstrip("/"), project_id,
-    )
+    base = str(request.base_url).rstrip("/")
+    logger.warning("DEBUG TRACE: %s/debug/project/%s", base, project_id)
     return LandingGenerateResponse(
         landing_page=LandingPageMetadata(
             id=page.id,

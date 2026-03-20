@@ -18,7 +18,7 @@ Public read path for landing render:
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -216,11 +216,13 @@ def serve_photo(item_id: str, db: Session = Depends(get_db)):
     response_model=PhotoSetResponse,
     summary="Get photo items for a landing snapshot (public, for landing page render)",
 )
-def get_public_photo_set(photo_set_id: str, db: Session = Depends(get_db)):
+def get_public_photo_set(photo_set_id: str, request: Request, db: Session = Depends(get_db)):
     """
     Returns items only for source_type=landing_snapshot.
     preset and manual_upload are not accessible via this endpoint.
     Used by the public /r/[slug] page to render style_grid.
+    photo_url is built from the incoming request base URL so it resolves
+    correctly for the external client regardless of server env config.
     """
     ps = (
         db.query(PhotoSet)
@@ -239,13 +241,14 @@ def get_public_photo_set(photo_set_id: str, db: Session = Depends(get_db)):
         .order_by(PhotoSetItem.display_order)
         .all()
     )
+    base = str(request.base_url).rstrip("/")
     return PhotoSetResponse(
         id=ps.id,
         name=ps.name,
         items=[
             PhotoSetItemResponse(
                 id=item.id,
-                photo_url=_photo_url(item.id),
+                photo_url=f"{base}/photos/{item.id}",
                 display_order=item.display_order,
             )
             for item in items
