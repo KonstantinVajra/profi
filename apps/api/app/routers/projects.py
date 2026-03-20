@@ -5,13 +5,17 @@ POST /projects       — create project workspace
 GET  /projects/{id}  — get project
 """
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.schemas.project import ProjectCreate, ProjectResponse
 from app.repositories.order_repo import OrderRepository
+from app.config import settings
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -20,6 +24,10 @@ def create_project(body: ProjectCreate, db: Session = Depends(get_db)):
     """Create a new project workspace. One project = one order."""
     repo = OrderRepository(db)
     project = repo.create_project(title=body.title)
+    logger.warning(
+        "DEBUG TRACE: %s/debug/project/%s",
+        settings.api_url.rstrip("/"), project.id,
+    )
     return ProjectResponse(
         id=project.id,
         title=project.title,

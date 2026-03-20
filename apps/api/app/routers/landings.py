@@ -18,6 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.config import settings
 from app.schemas.landing import (
     LandingGenerateRequest,
     LandingGenerateResponse,
@@ -159,6 +160,10 @@ def generate_landing(
         )
 
     # 7. return
+    logger.warning(
+        "DEBUG TRACE: %s/debug/project/%s",
+        settings.api_url.rstrip("/"), project_id,
+    )
     return LandingGenerateResponse(
         landing_page=LandingPageMetadata(
             id=page.id,
