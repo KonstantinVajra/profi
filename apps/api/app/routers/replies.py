@@ -104,7 +104,7 @@ def generate_replies(
 
     # 3. generate via LLM — variants contain {{landing_url}} placeholder
     try:
-        variants = reply_generator_service.generate(parsed_order)
+        variants = reply_generator_service.generate(parsed_order, project_id=project_id, db=db)
     except ValueError as exc:
         logger.error("Reply generation failed | project=%s | error=%s", project_id, exc)
         raise HTTPException(

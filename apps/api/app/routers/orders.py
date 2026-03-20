@@ -44,7 +44,7 @@ def extract_order(body: OrderInputCreate, db: Session = Depends(get_db)):
 
     # 3. LLM extraction + Pydantic validation
     try:
-        parsed = order_parser_service.parse(body.raw_text)
+        parsed = order_parser_service.parse(body.raw_text, project_id=str(body.project_id), db=db)
     except ValueError as exc:
         logger.error("Order parsing failed | project=%s | error=%s", body.project_id, exc)
         raise HTTPException(

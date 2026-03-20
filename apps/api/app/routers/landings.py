@@ -90,6 +90,8 @@ def generate_landing(
             price=body.price,
             photo_set_id=body.photo_set_id,
             case_series_id=body.case_series_id,
+            project_id=project_id,
+            db=db,
         )
     except ValueError as exc:
         logger.error(

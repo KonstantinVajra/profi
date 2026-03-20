@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.routers import projects, orders, replies, landings, dialogue, public_landings, photos
+from app.routers import debug
 
 
 @asynccontextmanager
@@ -41,6 +42,7 @@ app.include_router(landings.router,        prefix="/projects",        tags=["lan
 app.include_router(dialogue.router,        prefix="/projects",        tags=["dialogue"])
 app.include_router(public_landings.router, prefix="/public/landings", tags=["public"])
 app.include_router(photos.router,          tags=["photos"])
+app.include_router(debug.router,           prefix="/projects",        tags=["debug"])
 
 
 @app.get("/health")

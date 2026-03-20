@@ -363,19 +363,26 @@ class LandingGeneratorService:
         price: str | None = None,
         photo_set_id: str | None = None,
         case_series_id: str | None = None,
+        project_id: str | None = None,
+        db=None,
     ) -> LandingPageModel:
         logger.warning("LandingGeneratorService.generate() | version=%s", _SERVICE_VERSION)
-        draft = self._generate_semantic_draft(parsed_order)
+        draft = self._generate_semantic_draft(parsed_order, project_id=project_id, db=db)
         return self._generate_landing_json(
-            parsed_order, draft, photographer_name, price, photo_set_id, case_series_id
+            parsed_order, draft, photographer_name, price, photo_set_id, case_series_id,
+            project_id=project_id, db=db,
         )
 
-    def _generate_semantic_draft(self, parsed_order: ParsedOrder) -> _SemanticDraft:
+    def _generate_semantic_draft(self, parsed_order: ParsedOrder, project_id: str | None = None, db=None) -> _SemanticDraft:
+        import dataclasses
+        import json as _json
+
         user_message = (
             self._build_order_context(parsed_order)
             + "\n\n"
             + "Верни ответ строго в формате с блоками [HERO] [NUANCE] [TIP] [TRUST] [HOOK_KEY] [NEXT]. Без текста вне блоков."
         )
+        prompt_text = _SEMANTIC_DRAFT_PROMPT + "\n\n---USER---\n\n" + user_message
 
         _step1_messages = [
             {"role": "system", "content": _SEMANTIC_DRAFT_PROMPT},
@@ -392,6 +399,8 @@ class LandingGeneratorService:
             _step1_messages[1]["content"],
         )
 
+        input_payload = {"user_message": user_message}
+
         try:
             text = openai_client.extract_text(
                 system_prompt=_SEMANTIC_DRAFT_PROMPT,
@@ -401,6 +410,15 @@ class LandingGeneratorService:
             )
         except Exception as exc:
             logger.error("STEP1 FAILED — returning empty draft: %s", exc)
+            self._write_trace(
+                project_id=project_id,
+                db=db,
+                stage="landing_generation_step1",
+                input_payload=input_payload,
+                prompt_text=prompt_text,
+                raw_ai_output=None,
+                parsed_output=None,
+            )
             return _SemanticDraft()
 
         logger.warning("STEP1 RAW OUTPUT:\n%s", text)
@@ -412,6 +430,17 @@ class LandingGeneratorService:
             draft.case_description,
             draft.hook_key,
         )
+
+        self._write_trace(
+            project_id=project_id,
+            db=db,
+            stage="landing_generation_step1",
+            input_payload=input_payload,
+            prompt_text=prompt_text,
+            raw_ai_output=text,
+            parsed_output=dataclasses.asdict(draft),
+        )
+
         return draft
 
     def _parse_semantic_draft(self, text: str) -> _SemanticDraft:
@@ -463,20 +492,49 @@ class LandingGeneratorService:
         price: str | None,
         photo_set_id: str | None,
         case_series_id: str | None,
+        project_id: str | None = None,
+        db=None,
     ) -> LandingPageModel:
+        import json as _json
+
         packaging_prompt = self._load_packaging_prompt()
         user_message = self._build_packaging_message(
             parsed_order, photographer_name, price, photo_set_id, case_series_id
         )
+        prompt_text = packaging_prompt + "\n\n---USER---\n\n" + user_message
+        input_payload = {"user_message": user_message}
 
-        raw = openai_client.extract_json(
-            system_prompt=packaging_prompt,
-            user_message=user_message,
-            temperature=0.2,
-            max_tokens=1500,
-        )
+        try:
+            raw = openai_client.extract_json(
+                system_prompt=packaging_prompt,
+                user_message=user_message,
+                temperature=0.2,
+                max_tokens=1500,
+            )
+        except Exception as exc:
+            logger.error("OpenAI call failed during landing step2: %s", exc)
+            self._write_trace(
+                project_id=project_id, db=db,
+                stage="landing_generation_step2",
+                input_payload=input_payload,
+                prompt_text=prompt_text,
+                raw_ai_output=None,
+                parsed_output=None,
+            )
+            raise ValueError(f"AI call failed: {exc}") from exc
+
+        # capture raw AI output before any processing
+        raw_ai_str = _json.dumps(raw, ensure_ascii=False) if isinstance(raw, dict) else str(raw)
 
         if not isinstance(raw, dict):
+            self._write_trace(
+                project_id=project_id, db=db,
+                stage="landing_generation_step2",
+                input_payload=input_payload,
+                prompt_text=prompt_text,
+                raw_ai_output=raw_ai_str,
+                parsed_output=None,
+            )
             raise ValueError(
                 f"Step 2 AI returned non-object response (type={type(raw).__name__})."
             )
@@ -499,6 +557,14 @@ class LandingGeneratorService:
         try:
             model = LandingPageModel.model_validate(cleaned)
             logger.info("Landing generated | slug=%s | template=%s", model.slug, model.template_key)
+            self._write_trace(
+                project_id=project_id, db=db,
+                stage="landing_generation_step2",
+                input_payload=input_payload,
+                prompt_text=prompt_text,
+                raw_ai_output=raw_ai_str,
+                parsed_output=model.model_dump(mode="json"),
+            )
             return model
         except ValidationError as exc:
             logger.warning(
@@ -517,7 +583,18 @@ class LandingGeneratorService:
             max_tokens=1500,
         )
 
+        # capture raw repair attempt output before any processing
+        raw2_ai_str = _json.dumps(raw2, ensure_ascii=False) if isinstance(raw2, dict) else str(raw2)
+
         if not isinstance(raw2, dict):
+            self._write_trace(
+                project_id=project_id, db=db,
+                stage="landing_generation_step2",
+                input_payload=input_payload,
+                prompt_text=prompt_text,
+                raw_ai_output=raw2_ai_str,
+                parsed_output=None,
+            )
             raise ValueError(
                 f"Repair attempt returned non-object response (type={type(raw2).__name__})."
             )
@@ -540,14 +617,56 @@ class LandingGeneratorService:
         try:
             model = LandingPageModel.model_validate(cleaned2)
             logger.info("Landing generated after repair | slug=%s", model.slug)
+            self._write_trace(
+                project_id=project_id, db=db,
+                stage="landing_generation_step2",
+                input_payload=input_payload,
+                prompt_text=prompt_text,
+                raw_ai_output=raw2_ai_str,
+                parsed_output=model.model_dump(mode="json"),
+            )
             return model
         except ValidationError as exc2:
             logger.error(
                 "Landing validation failed after repair\n%s\nraw=%s", str(exc2), cleaned2
             )
+            self._write_trace(
+                project_id=project_id, db=db,
+                stage="landing_generation_step2",
+                input_payload=input_payload,
+                prompt_text=prompt_text,
+                raw_ai_output=raw2_ai_str,
+                parsed_output=None,
+            )
             raise ValueError(
                 f"Landing generation failed after repair attempt: {exc2}"
             ) from exc2
+
+    def _write_trace(
+        self,
+        project_id: str | None,
+        db,
+        stage: str,
+        input_payload: dict | None,
+        prompt_text: str | None,
+        raw_ai_output: str | None,
+        parsed_output: dict | list | None,
+    ) -> None:
+        """Write trace record. Silently skips if project_id or db is not provided."""
+        if not project_id or db is None:
+            return
+        try:
+            from app.repositories.debug_trace_repo import DebugTraceRepository
+            DebugTraceRepository(db).create_trace(
+                project_id=project_id,
+                stage=stage,
+                input_payload=input_payload,
+                prompt_text=prompt_text,
+                raw_ai_output=raw_ai_output,
+                parsed_output=parsed_output,
+            )
+        except Exception as exc:
+            logger.warning("Trace write failed (%s) | project=%s | error=%s", stage, project_id, exc)
 
     def _inject_draft(
         self, raw: dict[str, Any], draft: _SemanticDraft

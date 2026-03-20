@@ -40,9 +40,14 @@ class ReplyGeneratorService:
     def __init__(self) -> None:
         self._system_prompt = _PROMPT_PATH.read_text(encoding="utf-8")
 
-    def generate(self, parsed_order: ParsedOrder) -> list[ReplyVariant]:
+    def generate(self, parsed_order: ParsedOrder, project_id: str | None = None, db=None) -> list[ReplyVariant]:
         """
         Generate exactly 3 reply variants from a ParsedOrder.
+
+        Args:
+            parsed_order: validated order data
+            project_id: optional — if provided along with db, trace is written
+            db: optional SQLAlchemy session for trace persistence
 
         Returns:
             list[ReplyVariant] with one item per type: short, warm, expert.
@@ -50,16 +55,82 @@ class ReplyGeneratorService:
         Raises:
             ValueError: if AI output is missing types or fails validation.
         """
-        user_message = self._build_user_message(parsed_order)
+        import json as _json
 
-        raw = openai_client.extract_json(
-            system_prompt=self._system_prompt,
-            user_message=user_message,
-            temperature=0.7,
-            max_tokens=1500,
+        user_message = self._build_user_message(parsed_order)
+        prompt_text = self._system_prompt + "\n\n---USER---\n\n" + user_message
+        input_payload = {"user_message": user_message}
+
+        try:
+            raw = openai_client.extract_json(
+                system_prompt=self._system_prompt,
+                user_message=user_message,
+                temperature=0.7,
+                max_tokens=1500,
+            )
+        except Exception as exc:
+            logger.error("OpenAI call failed during reply generation: %s", exc)
+            self._write_trace(
+                project_id=project_id,
+                db=db,
+                input_payload=input_payload,
+                prompt_text=prompt_text,
+                raw_ai_output=None,
+                parsed_output=None,
+            )
+            raise ValueError(f"AI call failed: {exc}") from exc
+
+        # capture raw AI output before any processing
+        raw_ai_str = _json.dumps(raw, ensure_ascii=False) if isinstance(raw, (dict, list)) else str(raw)
+
+        try:
+            variants = self._parse_and_validate(raw)
+        except ValueError as exc:
+            self._write_trace(
+                project_id=project_id,
+                db=db,
+                input_payload=input_payload,
+                prompt_text=prompt_text,
+                raw_ai_output=raw_ai_str,
+                parsed_output=None,
+            )
+            raise
+
+        self._write_trace(
+            project_id=project_id,
+            db=db,
+            input_payload=input_payload,
+            prompt_text=prompt_text,
+            raw_ai_output=raw_ai_str,
+            parsed_output=[v.model_dump(mode="json") for v in variants],
         )
 
-        return self._parse_and_validate(raw)
+        return variants
+
+    def _write_trace(
+        self,
+        project_id: str | None,
+        db,
+        input_payload: dict | None,
+        prompt_text: str | None,
+        raw_ai_output: str | None,
+        parsed_output: list | None,
+    ) -> None:
+        """Write trace record. Silently skips if project_id or db is not provided."""
+        if not project_id or db is None:
+            return
+        try:
+            from app.repositories.debug_trace_repo import DebugTraceRepository
+            DebugTraceRepository(db).create_trace(
+                project_id=project_id,
+                stage="reply_generation",
+                input_payload=input_payload,
+                prompt_text=prompt_text,
+                raw_ai_output=raw_ai_output,
+                parsed_output=parsed_output,
+            )
+        except Exception as exc:
+            logger.warning("Trace write failed (reply_generation) | project=%s | error=%s", project_id, exc)
 
     # ── private ───────────────────────────────────────────────────────────
 
