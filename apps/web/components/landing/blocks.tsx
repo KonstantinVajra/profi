@@ -15,6 +15,7 @@ import type {
   CtaBlock,
   PersonalBlock,
 } from "@/types/landing";
+import { StyleGridClient } from "@/components/landing/StyleGridClient";
 
 // ── Hero ──────────────────────────────────────────────────────────────────
 
@@ -52,29 +53,19 @@ export function Badges({ badges }: { badges: BadgesBlock }) {
   );
 }
 
-// ── StyleGrid — photo placeholder ─────────────────────────────────────────
+// ── StyleGrid ─────────────────────────────────────────────────────────────
 
-export function StyleGrid({ grid: _ }: { grid: StyleGrid }) {
-  return (
-    <section className="pb-6">
-      <div className="rounded-2xl bg-gray-100 h-48 flex flex-col items-center justify-center gap-2">
-        <svg
-          className="w-8 h-8 text-gray-300"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={1.5}
-            d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-          />
-        </svg>
-        <span className="text-xs text-gray-400">Примеры работ</span>
-      </div>
-    </section>
-  );
+export function StyleGrid({ grid }: { grid: StyleGrid }) {
+  if (!grid.photo_set_id) {
+    return (
+      <section className="pb-6">
+        <div className="rounded-2xl bg-gray-100 h-48 flex items-center justify-center">
+          <span className="text-xs text-gray-400">Примеры работ</span>
+        </div>
+      </section>
+    );
+  }
+  return <StyleGridClient photoSetId={grid.photo_set_id} />;
 }
 
 // ── SimilarCase ───────────────────────────────────────────────────────────
