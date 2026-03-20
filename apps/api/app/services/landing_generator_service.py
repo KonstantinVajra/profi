@@ -28,7 +28,7 @@ No DB access. No HTTP. Receives ParsedOrder + overrides, returns LandingPageMode
 
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -397,14 +397,30 @@ _PHOTO_SET_MAP: dict[str, str] = {
 class _SemanticDraft:
     """
     Private intermediate result of step 1.
-    Fields map directly to real LandingPageModel placement targets.
+    Mirrors the new Step 1 prompt contract exactly:
+      [HERO_TITLE] [HERO_SUBTITLE] [NUANCE] [TIP] [TRUST] [HOOK_KEY] [NEXT]
     Local to this service only — not a public contract, not persisted.
     """
+    hero_title: str = ""
     hero_subtitle: str = ""
-    work_steps: list[str] = field(default_factory=lambda: ["", "", ""])
-    case_title: str = ""
-    case_description: str = ""
+    nuance: str = ""
+    tip: str = ""
+    trust: str = ""
     hook_key: str = ""
+    next: str = ""
+
+    @property
+    def work_steps(self) -> list[str]:
+        """Ordered mapping to work_block.steps: tip → nuance → trust."""
+        return [self.tip, self.nuance, self.trust]
+
+    @property
+    def case_description(self) -> str:
+        return self.next
+
+    @property
+    def case_title(self) -> str:
+        return ""
 
 
 class LandingGeneratorService:
@@ -440,7 +456,7 @@ class LandingGeneratorService:
         user_message = (
             self._build_order_context(parsed_order)
             + "\n\n"
-            + "Верни ответ строго в формате с блоками [HERO] [NUANCE] [TIP] [TRUST] [HOOK_KEY] [NEXT]. Без текста вне блоков."
+            + "Верни ответ строго в формате с блоками [HERO_TITLE] [HERO_SUBTITLE] [NUANCE] [TIP] [TRUST] [HOOK_KEY] [NEXT]. Без текста вне блоков."
         )
         prompt_text = _SEMANTIC_DRAFT_PROMPT + "\n\n---USER---\n\n" + user_message
 
@@ -484,11 +500,11 @@ class LandingGeneratorService:
         logger.warning("STEP1 RAW OUTPUT:\n%s", text)
         draft = self._parse_semantic_draft(text)
         logger.warning(
-            "Semantic draft parsed | hero=%r | steps=%r | next=%r | hook=%r",
+            "Semantic draft parsed | hero_title=%r | hero_subtitle=%r | hook=%r | next=%r",
+            draft.hero_title,
             draft.hero_subtitle,
-            draft.work_steps,
-            draft.case_description,
             draft.hook_key,
+            draft.next,
         )
 
         self._write_trace(
@@ -530,18 +546,14 @@ class LandingGeneratorService:
             else:
                 logger.warning("Step 1 returned unknown hook_key value: %r", hook_key)
 
-        work_steps = [
-            blocks.get("TIP", ""),
-            blocks.get("NUANCE", ""),
-            blocks.get("TRUST", ""),
-        ]
-
         return _SemanticDraft(
-            hero_subtitle=blocks.get("HERO", ""),
-            work_steps=work_steps,
-            case_title="",
-            case_description=blocks.get("NEXT", ""),
+            hero_title=blocks.get("HERO_TITLE", ""),
+            hero_subtitle=blocks.get("HERO_SUBTITLE", ""),
+            nuance=blocks.get("NUANCE", ""),
+            tip=blocks.get("TIP", ""),
+            trust=blocks.get("TRUST", ""),
             hook_key=hook_key,
+            next=blocks.get("NEXT", ""),
         )
 
     def _generate_landing_json(
@@ -559,7 +571,7 @@ class LandingGeneratorService:
 
         packaging_prompt = self._load_packaging_prompt()
         user_message = self._build_packaging_message(
-            parsed_order, photographer_name, price, photo_set_id, case_series_id
+            parsed_order, photographer_name, price, photo_set_id, case_series_id, draft
         )
         prompt_text = packaging_prompt + "\n\n---USER---\n\n" + user_message
         input_payload = {"user_message": user_message}
@@ -600,6 +612,7 @@ class LandingGeneratorService:
             )
 
         if isinstance(raw.get("hero"), dict):
+            raw["hero"].pop("title", None)
             raw["hero"].pop("subtitle", None)
         elif "hero" not in raw:
             raw["hero"] = {}
@@ -660,6 +673,7 @@ class LandingGeneratorService:
             )
 
         if isinstance(raw2.get("hero"), dict):
+            raw2["hero"].pop("title", None)
             raw2["hero"].pop("subtitle", None)
         elif "hero" not in raw2:
             raw2["hero"] = {}
@@ -735,6 +749,8 @@ class LandingGeneratorService:
 
         if not isinstance(result.get("hero"), dict):
             result["hero"] = {}
+        # Overwrite AI-generated hero fields with Step 1 content — both title and subtitle
+        result["hero"]["title"] = draft.hero_title
         result["hero"]["subtitle"] = draft.hero_subtitle
 
         if not isinstance(result.get("work_block"), dict):
@@ -751,10 +767,10 @@ class LandingGeneratorService:
             result["similar_case"] = existing_similar_case
 
         logger.warning(
-            "Inject summary | hero.subtitle=%r | work_block.steps=%r | similar_case.description=%r",
+            "Inject summary | hero.title=%r | hero.subtitle=%r | work_block.steps=%r",
+            result.get("hero", {}).get("title"),
             result.get("hero", {}).get("subtitle"),
             result.get("work_block", {}).get("steps"),
-            result.get("similar_case", {}).get("description") if isinstance(result.get("similar_case"), dict) else None,
         )
 
         return result
@@ -782,29 +798,46 @@ class LandingGeneratorService:
         price: str | None,
         photo_set_id: str | None,
         case_series_id: str | None,
+        draft: "_SemanticDraft | None" = None,
     ) -> str:
-        proposed_price = price or (f"до {o.budget_max} ₽" if o.budget_max else "не указана")
-        lines = [
-            f"client_label: {o.client_label or o.client_name or 'клиент'}",
+        """
+        Build Step 2 user message.
+        Semantic draft fields (from Step 1) are the primary content block.
+        Order context fields are structural hints for slug/template/price selection.
+        """
+        proposed_price = price or (f"до {o.budget_max} руб." if o.budget_max else "не указана")
+
+        lines = []
+
+        # Semantic draft block — Step 2 prompt maps these fields directly into JSON
+        if draft is not None:
+            lines += [
+                f"hero_title: {draft.hero_title}",
+                f"hero_subtitle: {draft.hero_subtitle}",
+                f"nuance: {draft.nuance}",
+                f"tip: {draft.tip}",
+                f"trust: {draft.trust}",
+                f"hook_key: {draft.hook_key}",
+                f"next: {draft.next}",
+            ]
+
+        # Structural context — for slug, template, price, photo set
+        lines += [
+            f"proposed_price: {proposed_price}",
+            f"photographer_name: {photographer_name}",
             f"event_type: {o.event_type or ''}",
             f"event_subtype: {o.event_subtype or ''}",
             f"date_text: {o.date_text or ''}",
             f"event_date: {o.event_date.isoformat() if o.event_date else ''}",
             f"city: {o.city or ''}",
-            f"location: {o.location or ''}",
-            f"duration_text: {o.duration_text or ''}",
-            f"guest_count_text: {o.guest_count_text or ''}",
-            f"budget_max: {o.budget_max or ''}",
-            f"requirements: {', '.join(o.requirements) if o.requirements else ''}",
-            f"priority_signals: {', '.join(o.priority_signals) if o.priority_signals else ''}",
-            f"photographer_name: {photographer_name}",
-            f"proposed_price: {proposed_price}",
+            f"client_label: {o.client_label or o.client_name or 'клиент'}",
         ]
         if photo_set_id:
             lines.append(f"preferred_photo_set_id: {photo_set_id}")
         if case_series_id:
             lines.append(f"preferred_case_series_id: {case_series_id}")
         return "\n".join(lines)
+
 
     def _post_process(
         self,
