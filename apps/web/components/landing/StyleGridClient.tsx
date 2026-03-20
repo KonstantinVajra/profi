@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 
 interface PhotoItem {
   id: string;
@@ -14,50 +14,83 @@ export function StyleGridClient({ photoSetId }: { photoSetId: string }) {
   const [items, setItems] = useState<PhotoItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
-  const feedRefs = useRef<(HTMLDivElement | null)[]>([]);
+  // Determined once at open time, not recalculated on resize
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Mobile feed refs
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const photoRowRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   useEffect(() => {
     fetch(`${API_BASE}/public/photo-sets/${photoSetId}`)
       .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (data?.items) setItems(data.items);
-      })
+      .then((data) => { if (data?.items) setItems(data.items); })
       .catch((err) => console.error("StyleGrid fetch failed:", err))
       .finally(() => setLoading(false));
   }, [photoSetId]);
 
-  const close = useCallback(() => setSelectedIndex(null), []);
+  function open(index: number) {
+    setIsMobile(window.innerWidth < 640);
+    setSelectedIndex(index);
+  }
 
-  const prev = useCallback(() => {
-    if (items.length === 0) return;
-    setSelectedIndex((i) => (i === null ? null : (i - 1 + items.length) % items.length));
-  }, [items.length]);
+  function close() { setSelectedIndex(null); }
 
-  const next = useCallback(() => {
-    if (items.length === 0) return;
-    setSelectedIndex((i) => (i === null ? null : (i + 1) % items.length));
-  }, [items.length]);
-
-  // Scroll to selected photo in mobile feed when viewer opens
+  // ── Mobile: scroll to tapped photo ───────────────────────────────────────
+  // Step 1: initial scroll as soon as viewer mounts (catches cached images)
+  // Step 2: repeated scroll after target image loads (catches slow images)
   useEffect(() => {
-    if (selectedIndex === null) return;
-    const el = feedRefs.current[selectedIndex];
-    if (el) {
-      el.scrollIntoView({ behavior: "auto", block: "start" });
+    if (selectedIndex === null || !isMobile) return;
+
+    function scrollToTarget() {
+      const target = photoRowRefs.current[selectedIndex!];
+      const container = scrollContainerRef.current;
+      if (target && container) {
+        container.scrollTop = target.offsetTop;
+      }
     }
-  }, [selectedIndex]);
 
-  // Keyboard navigation for desktop lightbox
-  useEffect(() => {
-    if (selectedIndex === null) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
-      if (e.key === "ArrowLeft") prev();
-      if (e.key === "ArrowRight") next();
+    // Step 1 — initial scroll after paint
+    const id = requestAnimationFrame(scrollToTarget);
+
+    // Step 2 — re-scroll after target image load (cleanup symmetric: only if listener was added)
+    const targetEl = photoRowRefs.current[selectedIndex];
+    const img = targetEl?.querySelector("img");
+    let listenerAdded = false;
+    if (img && !img.complete) {
+      img.addEventListener("load", scrollToTarget, { once: true });
+      listenerAdded = true;
+    }
+
+    return () => {
+      cancelAnimationFrame(id);
+      if (listenerAdded && img) img.removeEventListener("load", scrollToTarget);
     };
+  }, [selectedIndex, isMobile]);
+
+  // ── Desktop: keyboard navigation ─────────────────────────────────────────
+  useEffect(() => {
+    if (selectedIndex === null || isMobile) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") close();
+      if (e.key === "ArrowLeft") setSelectedIndex((i) =>
+        i === null || items.length === 0 ? null : (i - 1 + items.length) % items.length
+      );
+      if (e.key === "ArrowRight") setSelectedIndex((i) =>
+        i === null || items.length === 0 ? null : (i + 1) % items.length
+      );
+    }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedIndex, close, prev, next]);
+  }, [selectedIndex, isMobile, items.length]);
+
+  // ── Mobile: Esc close ─────────────────────────────────────────────────────
+  useEffect(() => {
+    if (selectedIndex === null || !isMobile) return;
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") close(); }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedIndex, isMobile]);
 
   if (loading) {
     return (
@@ -81,13 +114,13 @@ export function StyleGridClient({ photoSetId }: { photoSetId: string }) {
 
   return (
     <section className="pb-6">
-      {/* Grid */}
+      {/* Thumbnail grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
         {items.map((item, i) => (
           <button
             key={item.id}
             type="button"
-            onClick={() => setSelectedIndex(i)}
+            onClick={() => open(i)}
             className="focus:outline-none rounded-xl overflow-hidden"
             aria-label={`Открыть фото ${i + 1}`}
           >
@@ -100,93 +133,129 @@ export function StyleGridClient({ photoSetId }: { photoSetId: string }) {
         ))}
       </div>
 
-      {/* Viewer — mobile: vertical feed, desktop: centered lightbox */}
       {selectedIndex !== null && (
-        <div className="fixed inset-0 z-50 overflow-y-auto" style={{ backgroundColor: "rgba(0,0,0,0.95)" }}>
-
-          {/* Close button — always visible */}
-          <button
-            type="button"
-            onClick={close}
-            className="fixed top-4 right-4 z-10 text-white text-2xl leading-none w-10 h-10 flex items-center justify-center rounded-full"
-            style={{ background: "rgba(0,0,0,0.6)" }}
-            aria-label="Закрыть"
-          >
-            ×
-          </button>
-
-          {/* Mobile: vertical feed — hidden on sm+ */}
-          <div className="block sm:hidden pt-16 pb-16">
-            {items.map((item, i) => (
-              <div
-                key={item.id}
-                ref={(el) => { feedRefs.current[i] = el; }}
-                className="w-full mb-2"
-              >
-                <img
-                  src={item.photo_url}
-                  alt=""
-                  className="w-full object-contain"
-                />
-                <div className="text-center text-xs text-gray-500 py-1">
-                  {i + 1} / {items.length}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Desktop: centered lightbox — hidden on mobile */}
-          <div
-            className="hidden sm:flex items-center justify-center w-full h-full"
-            onClick={close}
-          >
+        <>
+          {/* ── Mobile viewer: fullscreen vertical feed ─────────────────── */}
+          {isMobile && (
             <div
-              className="relative flex items-center justify-center w-full h-full"
-              onClick={(e) => e.stopPropagation()}
+              style={{
+                position: "fixed", top: 0, left: 0,
+                width: "100%", height: "100%",
+                zIndex: 50,
+                backgroundColor: "rgba(0,0,0,0.95)",
+              }}
             >
-              <img
-                src={items[selectedIndex].photo_url}
-                alt=""
-                className="max-h-screen max-w-full object-contain px-16"
-              />
+              {/* Close — always on top */}
+              <button
+                type="button"
+                onClick={close}
+                aria-label="Закрыть"
+                style={{
+                  position: "absolute", top: 16, right: 16, zIndex: 60,
+                  width: 40, height: 40, borderRadius: "50%",
+                  background: "rgba(0,0,0,0.6)", color: "#fff",
+                  fontSize: 24, lineHeight: "1",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  border: "none", cursor: "pointer",
+                }}
+              >×</button>
 
-              {/* Counter */}
+              {/* Scrollable feed — Safari-safe: overflow on inner absolute div */}
               <div
-                className="absolute top-4 left-1/2 text-white text-sm px-3 py-1 rounded-full"
-                style={{ transform: "translateX(-50%)", background: "rgba(0,0,0,0.5)" }}
+                ref={scrollContainerRef}
+                style={{
+                  position: "absolute", top: 0, left: 0,
+                  width: "100%", height: "100%",
+                  overflowY: "scroll",
+                  WebkitOverflowScrolling: "touch",
+                } as React.CSSProperties & { WebkitOverflowScrolling: string }}
               >
-                {selectedIndex + 1} / {items.length}
+                <div style={{ height: 64 }} />
+                {items.map((item, i) => (
+                  <div
+                    key={item.id}
+                    ref={(el) => { photoRowRefs.current[i] = el; }}
+                    style={{ width: "100%", marginBottom: 8 }}
+                  >
+                    <img
+                      src={item.photo_url}
+                      alt=""
+                      style={{ width: "100%", height: "auto", display: "block" }}
+                    />
+                    <div style={{
+                      textAlign: "center", color: "rgba(255,255,255,0.4)",
+                      fontSize: 12, padding: "4px 0 8px",
+                    }}>
+                      {i + 1} / {items.length}
+                    </div>
+                  </div>
+                ))}
+                <div style={{ height: 80 }} />
               </div>
-
-              {/* Prev */}
-              {items.length > 1 && (
-                <button
-                  type="button"
-                  onClick={prev}
-                  className="absolute left-2 text-white text-3xl w-10 h-10 flex items-center justify-center rounded-full"
-                  style={{ background: "rgba(0,0,0,0.5)" }}
-                  aria-label="Предыдущее"
-                >
-                  ‹
-                </button>
-              )}
-
-              {/* Next */}
-              {items.length > 1 && (
-                <button
-                  type="button"
-                  onClick={next}
-                  className="absolute right-2 text-white text-3xl w-10 h-10 flex items-center justify-center rounded-full"
-                  style={{ background: "rgba(0,0,0,0.5)" }}
-                  aria-label="Следующее"
-                >
-                  ›
-                </button>
-              )}
             </div>
-          </div>
+          )}
 
-        </div>
+          {/* ── Desktop viewer: centered lightbox/slideshow ──────────────── */}
+          {!isMobile && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center"
+              style={{ backgroundColor: "rgba(0,0,0,0.9)" }}
+              onClick={close}
+            >
+              <div
+                className="relative flex items-center justify-center w-full h-full"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {items[selectedIndex] && (
+                  <img
+                    src={items[selectedIndex].photo_url}
+                    alt=""
+                    className="max-h-screen max-w-full object-contain px-16"
+                  />
+                )}
+
+                {/* Close */}
+                <button
+                  type="button" onClick={close} aria-label="Закрыть"
+                  className="absolute top-4 right-4 text-white text-2xl w-10 h-10 flex items-center justify-center rounded-full"
+                  style={{ background: "rgba(0,0,0,0.5)" }}
+                >×</button>
+
+                {/* Counter */}
+                <div
+                  className="absolute top-4 left-1/2 text-white text-sm px-3 py-1 rounded-full"
+                  style={{ transform: "translateX(-50%)", background: "rgba(0,0,0,0.5)" }}
+                >
+                  {selectedIndex + 1} / {items.length}
+                </div>
+
+                {/* Prev */}
+                {items.length > 1 && (
+                  <button
+                    type="button" aria-label="Предыдущее"
+                    onClick={() => setSelectedIndex((i) =>
+                      i === null ? null : (i - 1 + items.length) % items.length
+                    )}
+                    className="absolute left-2 text-white text-3xl w-10 h-10 flex items-center justify-center rounded-full"
+                    style={{ background: "rgba(0,0,0,0.5)" }}
+                  >‹</button>
+                )}
+
+                {/* Next */}
+                {items.length > 1 && (
+                  <button
+                    type="button" aria-label="Следующее"
+                    onClick={() => setSelectedIndex((i) =>
+                      i === null ? null : (i + 1) % items.length
+                    )}
+                    className="absolute right-2 text-white text-3xl w-10 h-10 flex items-center justify-center rounded-full"
+                    style={{ background: "rgba(0,0,0,0.5)" }}
+                  >›</button>
+                )}
+              </div>
+            </div>
+          )}
+        </>
       )}
     </section>
   );
