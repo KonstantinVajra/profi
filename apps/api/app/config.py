@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     openai_api_key: str
     openai_model: str = "gpt-4o-mini"
     site_url: str = "http://localhost:3000"
+    api_url: str = "http://localhost:8000"
 
     class Config:
         env_file = ".env"

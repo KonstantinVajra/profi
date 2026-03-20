@@ -32,7 +32,7 @@ def _storage_path(storage_key: str) -> Path:
 
 
 def _photo_url(item_id: str) -> str:
-    base = getattr(settings, "api_url", "http://localhost:8000")
+    base = settings.api_url.rstrip("/")
     return f"{base}/photos/{item_id}"
 
 
