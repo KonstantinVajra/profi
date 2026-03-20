@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   createProject,
   extractOrder,
@@ -44,7 +44,8 @@ interface SuggestionData {
 // ── Component ─────────────────────────────────────────────────────────────
 
 export default function WorkspacePage() {
-  const siteUrl = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
+  const [siteUrl, setSiteUrl] = useState("http://localhost:3000");
+  useEffect(() => { setSiteUrl(window.location.origin); }, []);
 
   // state
   const [orderText, setOrderText] = useState("");
