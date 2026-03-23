@@ -10,6 +10,7 @@
  *   MVP mode (c.final_text is present and non-empty):
  *     FinalTextBlock → StyleGrid → CtaButtons
  *     All legacy structural blocks are suppressed.
+ *     Layout: white card on a lightly tinted background.
  *
  *   Legacy mode (c.final_text absent or empty):
  *     hero → personal_block → badges → style_grid → similar_case → price_card
@@ -40,7 +41,7 @@ async function getLanding(slug: string): Promise<LandingPublicResponse | null> {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
   try {
     const res = await fetch(`${apiUrl}/public/landings/${slug}`, {
-      cache: "no-store",   // always fresh for MVP — no caching complexity
+      cache: "no-store",
     });
     if (res.status === 404) return null;
     if (!res.ok) throw new Error(`API error ${res.status}`);
@@ -70,22 +71,26 @@ export default async function LandingPage({
 
   if (isMvpMode) {
     return (
-      <main className="min-h-screen bg-white max-w-lg mx-auto px-4 pb-32">
+      // Stone-50 tint: warm neutral, not cold admin-gray.
+      // White card reads as a distinct surface against it.
+      <div className="min-h-screen bg-stone-50 py-8 px-4">
+        <div className="max-w-lg mx-auto bg-white rounded-2xl shadow-sm overflow-hidden">
 
-        {/* Primary body copy — full reply text from Step 1 */}
-        <FinalTextBlock text={c.final_text!.trim()} />
+          {/* Primary body copy — paragraphs split from Step 1 final_text */}
+          <FinalTextBlock text={c.final_text!.trim()} />
 
-        {/* Photo block */}
-        <StyleGrid grid={c.style_grid} />
+          {/* Photo block */}
+          <StyleGrid grid={c.style_grid} />
 
-        {/* Contacts */}
-        <CtaButtons cta={c.cta} />
+          {/* Contacts */}
+          <CtaButtons cta={c.cta} />
 
-      </main>
+        </div>
+      </div>
     );
   }
 
-  // Legacy mode: backward compatible rendering for landings without final_text.
+  // Legacy mode: untouched — backward compatible with old landings.
   return (
     <main className="min-h-screen bg-white max-w-lg mx-auto px-4 pb-32">
 
