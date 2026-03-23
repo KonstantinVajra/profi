@@ -248,6 +248,22 @@ export function PersonalBlockSection({ block }: { block: PersonalBlock }) {
   );
 }
 
+// ── FinalText ─────────────────────────────────────────────────────────────
+// Primary landing content (MVP). Rendered directly above the photo block.
+// Populated from Step 1 AI output. entry_message is NOT rendered here.
+// Backward compat: if final_text is absent, this component renders nothing
+// and the legacy block structure remains unchanged.
+
+export function FinalTextBlock({ text }: { text: string }) {
+  return (
+    <section className="pb-6">
+      <p className="text-base text-gray-800 leading-relaxed whitespace-pre-line">
+        {text}
+      </p>
+    </section>
+  );
+}
+
 // ── CTA ───────────────────────────────────────────────────────────────────
 
 export function CtaButtons({ cta }: { cta: CtaBlock }) {

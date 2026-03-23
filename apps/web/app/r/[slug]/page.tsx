@@ -5,9 +5,16 @@
  * Renders blocks from JSON via template components.
  * AI never generates HTML — this file is the renderer.
  *
- * Block render order:
- *   hero → personal_block → badges → style_grid → similar_case → price_card
- *   → photographer → work_block → reviews → quick_questions → cta
+ * Render modes:
+ *
+ *   MVP mode (c.final_text is present and non-empty):
+ *     FinalTextBlock → StyleGrid → CtaButtons
+ *     All legacy structural blocks are suppressed.
+ *
+ *   Legacy mode (c.final_text absent or empty):
+ *     hero → personal_block → badges → style_grid → similar_case → price_card
+ *     → photographer → work_block → reviews → quick_questions → cta
+ *     Unchanged — backward compatible with old landings.
  */
 
 import { notFound } from "next/navigation";
@@ -24,6 +31,7 @@ import {
   QuickQuestions,
   CtaButtons,
   PersonalBlockSection,
+  FinalTextBlock,
 } from "@/components/landing/blocks";
 
 // ── Data fetching ─────────────────────────────────────────────────────────
@@ -55,6 +63,29 @@ export default async function LandingPage({
 
   const c = data.landing_content;
 
+  // MVP mode: final_text is the primary body copy.
+  // Layout: final_text → photo block → contacts.
+  // Legacy blocks are not rendered in this mode.
+  const isMvpMode = Boolean(c.final_text?.trim());
+
+  if (isMvpMode) {
+    return (
+      <main className="min-h-screen bg-white max-w-lg mx-auto px-4 pb-32">
+
+        {/* Primary body copy — full reply text from Step 1 */}
+        <FinalTextBlock text={c.final_text!.trim()} />
+
+        {/* Photo block */}
+        <StyleGrid grid={c.style_grid} />
+
+        {/* Contacts */}
+        <CtaButtons cta={c.cta} />
+
+      </main>
+    );
+  }
+
+  // Legacy mode: backward compatible rendering for landings without final_text.
   return (
     <main className="min-h-screen bg-white max-w-lg mx-auto px-4 pb-32">
 
