@@ -75,6 +75,8 @@ export interface LandingPageModel {
   // Render this as main content block if present; fall back to legacy blocks if absent.
   // Architectural rule: final_text = primary content (MVP); semantic blocks = secondary / legacy.
   final_text?: string;
+  // Short messenger hook from Step 1. Used in workspace entry block.
+  entry_message?: string;
 }
 
 export interface LandingPageMeta {

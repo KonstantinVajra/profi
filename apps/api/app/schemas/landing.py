@@ -104,6 +104,9 @@ class LandingPageModel(BaseModel):
     # Semantic blocks (work_block, similar_case, etc.) are secondary / legacy.
     # AI must never generate HTML in this field.
     final_text: Optional[str] = None
+    # Short messenger hook (2–4 lines) from Step 1. Sent to client before landing link.
+    # AI must never generate HTML in this field.
+    entry_message: Optional[str] = None
 
     @field_validator("quick_questions")
     @classmethod

@@ -33,7 +33,8 @@ interface LandingData {
   landing_page: { slug: string; status: string };
   landing_content: {
     hero: { title: string };
-    final_text?: string;  // primary entry text from Step 1; null for old landings
+    final_text?: string;     // full reply text from Step 1
+    entry_message?: string;  // short messenger hook from Step 1; preferred in workspace
   };
 }
 
@@ -330,9 +331,11 @@ export default function WorkspacePage() {
 
         {/* Block C — Landing */}
         {landing && landingUrl && (() => {
-          // Use full entry text from Step 1 if present.
-          // Falls back to "[entry]" for old landings without final_text.
-          const entryText = landing.landing_content.final_text?.trim() || "[entry]";
+          // Prefer entry_message (short hook). Fall back to final_text, then to "[entry]".
+          const entryText =
+            landing.landing_content.entry_message?.trim() ||
+            landing.landing_content.final_text?.trim() ||
+            "[entry]";
           return (
             <section className="bg-white rounded-2xl p-6 shadow-sm">
               <div className="flex justify-between items-start gap-4">
