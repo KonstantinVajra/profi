@@ -13,6 +13,7 @@ import {
   createPresetAlbum,
 } from "@/lib/api";
 import type { PhotoSet } from "@/types/photo";
+import { selectExtractionMethod, validateScreenshotFile } from "@/lib/extractionUtils";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -134,7 +135,8 @@ export default function WorkspacePage() {
 
   async function handleGenerate() {
     // text has priority over screenshot; at least one must be present
-    if (!orderText.trim() && !screenshotFile) return;
+    const extractionMethod = selectExtractionMethod(orderText, screenshotFile);
+    if (!extractionMethod) return;
     setLoading(true);
     setError(null);
     setParsedOrder(null);
@@ -147,9 +149,9 @@ export default function WorkspacePage() {
       const project = await createProject() as { id: string };
       setProjectId(project.id);
 
-      // 2. extract order — text takes priority over screenshot
+      // 2. extract order — method determined by selectExtractionMethod
       const parsed = (
-        orderText.trim()
+        extractionMethod === "text"
           ? await extractOrder(project.id, orderText)
           : await extractOrderFromImage(project.id, screenshotFile!)
       ) as ParsedOrderData;
@@ -323,9 +325,12 @@ export default function WorkspacePage() {
               className="text-sm"
               onChange={(e) => {
                 const file = e.target.files?.[0] ?? null;
-                if (file && !file.type.startsWith("image/")) {
-                  setError("Можно загрузить только изображение");
-                  return;
+                if (file) {
+                  const validationError = validateScreenshotFile(file);
+                  if (validationError) {
+                    setError(validationError);
+                    return;
+                  }
                 }
                 setScreenshotFile(file);
               }}
