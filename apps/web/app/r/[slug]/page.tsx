@@ -1,122 +1,435 @@
-/**
- * /r/[slug] — Public micro landing page
- *
- * Fetches LandingPageModel JSON from backend.
- * Renders blocks from JSON via template components.
- * AI never generates HTML — this file is the renderer.
- *
- * Render modes:
- *
- *   MVP mode (c.final_text is present and non-empty):
- *     OrderHeader → FinalTextBlock → StyleGrid → CtaButtons
- *     All legacy structural blocks are suppressed.
- *     Layout: white card on a lightly tinted background.
- *
- *   Legacy mode (c.final_text absent or empty):
- *     hero → personal_block → badges → style_grid → similar_case → price_card
- *     → photographer → work_block → reviews → quick_questions → cta
- *     Unchanged — backward compatible with old landings.
- */
+"use client";
 
-import { notFound } from "next/navigation";
-import type { LandingPublicResponse } from "@/types/landing";
+import { useState, useEffect } from "react";
 import {
-  Hero,
-  Badges,
-  StyleGrid,
-  SimilarCaseBlock,
-  PriceCardBlock,
-  PhotographerBlock,
-  WorkBlockSection,
-  Reviews,
-  QuickQuestions,
-  CtaButtons,
-  PersonalBlockSection,
-  FinalTextBlock,
-  OrderHeader,
-} from "@/components/landing/blocks";
+  createProject,
+  extractOrder,
+  generateLanding,
+  generateReplies,
+  suggestDialogueReply,
+  getPhotoSets,
+  uploadPhotos,
+  createPresetAlbum,
+} from "@/lib/api";
+import type { PhotoSet } from "@/types/photo";
 
-// ── Data fetching ─────────────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────
 
-async function getLanding(slug: string): Promise<LandingPublicResponse | null> {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-  try {
-    const res = await fetch(`${apiUrl}/public/landings/${slug}`, {
-      cache: "no-store",
-    });
-    if (res.status === 404) return null;
-    if (!res.ok) throw new Error(`API error ${res.status}`);
-    return res.json();
-  } catch {
-    return null;
-  }
+interface ParsedOrderData {
+  client_name: string | null;
+  event_type: string | null;
+  city: string | null;
+  date_text: string | null;
+  budget_max: number | null;
 }
 
-// ── Page ──────────────────────────────────────────────────────────────────
+interface ReplyVariantData {
+  id: string;
+  variant_type: string;
+  message_text: string;
+}
 
-export default async function LandingPage({
-  params,
-}: {
-  params: { slug: string };
-}) {
-  const data = await getLanding(params.slug);
+interface LandingData {
+  landing_page: { slug: string; status: string };
+  landing_content: {
+    hero: { title: string };
+    final_text?: string;  // primary entry text from Step 1; null for old landings
+  };
+}
 
-  if (!data) return notFound();
+interface SuggestionData {
+  detected_intent: string;
+  detected_stage: string;
+  suggestions: Array<{ type: string; text: string }>;
+  next_best_question: string;
+}
 
-  const c = data.landing_content;
+// ── Component ─────────────────────────────────────────────────────────────
 
-  // MVP mode: final_text is the primary body copy.
-  // Layout: OrderHeader → final_text → photo block → contacts.
-  // Legacy blocks are not rendered in this mode.
-  const isMvpMode = Boolean(c.final_text?.trim());
+export default function WorkspacePage() {
+  const [siteUrl, setSiteUrl] = useState("http://localhost:3000");
+  useEffect(() => { setSiteUrl(window.location.origin); }, []);
 
-  if (isMvpMode) {
-    return (
-      <div className="min-h-screen bg-stone-50 py-8 px-4">
-        <div className="max-w-lg mx-auto bg-white rounded-2xl shadow-sm overflow-hidden">
+  // state
+  const [orderText, setOrderText] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-          <OrderHeader
-            templateKey={c.template_key}
-            price={c.price_card?.price}
-          />
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [parsedOrder, setParsedOrder] = useState<ParsedOrderData | null>(null);
+  const [landing, setLanding] = useState<LandingData | null>(null);
+  const [replies, setReplies] = useState<ReplyVariantData[]>([]);
+  const [clientMsg, setClientMsg] = useState("");
+  const [suggestion, setSuggestion] = useState<SuggestionData | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
-          <FinalTextBlock text={c.final_text!.trim()} />
+  // photo state
+  const [photoSets, setPhotoSets] = useState<PhotoSet[]>([]);
+  const [selectedPhotoSetId, setSelectedPhotoSetId] = useState<string | null>(null);
+  const [manualFiles, setManualFiles] = useState<File[]>([]);
+  const [photoSetsLoaded, setPhotoSetsLoaded] = useState(false);
+  // preset album creation
+  const [newAlbumName, setNewAlbumName] = useState("");
+  const [newAlbumFiles, setNewAlbumFiles] = useState<File[]>([]);
+  const [albumCreating, setAlbumCreating] = useState(false);
 
-          <StyleGrid grid={c.style_grid} />
-
-          <CtaButtons cta={c.cta} />
-
-        </div>
-      </div>
-    );
+  async function copyToClipboard(text: string, id: string) {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        // Fallback for HTTP (non-localhost IP addresses)
+        const el = document.createElement("textarea");
+        el.value = text;
+        el.style.position = "fixed";
+        el.style.opacity = "0";
+        document.body.appendChild(el);
+        el.focus();
+        el.select();
+        document.execCommand("copy");
+        document.body.removeChild(el);
+      }
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 1500);
+    } catch {
+      // Silent fail — do not show red error to user
+    }
   }
 
-  // Legacy mode: backward compatible with old landings without final_text.
+  // ── Photo helpers ────────────────────────────────────────────────────────
+
+  async function loadPhotoSets() {
+    if (photoSetsLoaded) return;
+    try {
+      const sets = await getPhotoSets() as PhotoSet[];
+      setPhotoSets(sets);
+      setPhotoSetsLoaded(true);
+    } catch {
+      // non-critical — workspace still usable without photo sets
+    }
+  }
+
+  async function handleCreateAlbum() {
+    if (!newAlbumName.trim() || newAlbumFiles.length === 0) return;
+    setAlbumCreating(true);
+    try {
+      await createPresetAlbum(newAlbumName.trim(), newAlbumFiles);
+      setNewAlbumName("");
+      setNewAlbumFiles([]);
+      setPhotoSetsLoaded(false);
+      await loadPhotoSets();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Album creation failed");
+    } finally {
+      setAlbumCreating(false);
+    }
+  }
+
+  // ── Step 1-4: generate everything ───────────────────────────────────────
+
+  async function handleGenerate() {
+    if (!orderText.trim()) return;
+    setLoading(true);
+    setError(null);
+    setParsedOrder(null);
+    setLanding(null);
+    setReplies([]);
+    setSuggestion(null);
+
+    try {
+      // 1. create project
+      const project = await createProject() as { id: string };
+      setProjectId(project.id);
+
+      // 2. extract order
+      const parsed = await extractOrder(project.id, orderText) as ParsedOrderData;
+      setParsedOrder(parsed);
+
+      // 3. generate landing — resolve photo set
+      let resolvedPhotoSetId: string | undefined = selectedPhotoSetId ?? undefined;
+      if (!resolvedPhotoSetId && manualFiles.length > 0) {
+        const uploadResult = await uploadPhotos(project.id, manualFiles);
+        resolvedPhotoSetId = uploadResult.photo_set_id;
+      }
+      const landingResult = await generateLanding(project.id, resolvedPhotoSetId) as LandingData;
+      setLanding(landingResult);
+
+      // 4. generate replies with real landing URL
+      const slug = landingResult.landing_page.slug;
+      const landingUrl = `${siteUrl}/r/${slug}`;
+      const repliesResult = await generateReplies(project.id, landingUrl) as { reply_variants: ReplyVariantData[] };
+      setReplies(repliesResult.reply_variants);
+
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Unknown error");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // ── Step 5: dialogue ─────────────────────────────────────────────────────
+
+  async function handleDialogue() {
+    if (!projectId || !clientMsg.trim()) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await suggestDialogueReply(projectId, clientMsg) as SuggestionData;
+      setSuggestion(result);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Unknown error");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const landingUrl = landing ? `${siteUrl}/r/${landing.landing_page.slug}` : null;
+
+  // ── Render ────────────────────────────────────────────────────────────────
+
   return (
-    <main className="min-h-screen bg-white max-w-lg mx-auto px-4 pb-32">
+    <main className="min-h-screen bg-gray-50 py-10 px-4">
+      <div className="max-w-2xl mx-auto space-y-6">
 
-      <Hero hero={c.hero} />
+        <h1 className="text-xl font-bold">Landing Reply — Workspace</h1>
 
-      {c.personal_block && <PersonalBlockSection block={c.personal_block} />}
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">
+            {error}
+          </div>
+        )}
 
-      {c.badges && <Badges badges={c.badges} />}
+        {/* Block Photos — Album selector */}
+        <section className="bg-white rounded-2xl p-6 shadow-sm">
+          <h2 className="text-base font-semibold mb-3">Фото для лендинга</h2>
 
-      <StyleGrid grid={c.style_grid} />
+          {/* Preset albums */}
+          <div className="mb-4">
+            <button
+              onClick={loadPhotoSets}
+              className="text-sm text-blue-600 underline mb-2 block"
+            >
+              Загрузить альбомы
+            </button>
+            {photoSets.length > 0 && (
+              <div className="space-y-1">
+                <p className="text-xs text-gray-400 mb-1">Выберите альбом:</p>
+                {photoSets.map((ps) => (
+                  <label key={ps.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="radio"
+                      name="photoSet"
+                      value={ps.id}
+                      checked={selectedPhotoSetId === ps.id}
+                      onChange={() => { setSelectedPhotoSetId(ps.id); setManualFiles([]); }}
+                    />
+                    {ps.name ?? ps.id}
+                    <span className="text-xs text-gray-400">({ps.items.length} фото)</span>
+                  </label>
+                ))}
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="radio"
+                    name="photoSet"
+                    value=""
+                    checked={selectedPhotoSetId === null}
+                    onChange={() => setSelectedPhotoSetId(null)}
+                  />
+                  Без альбома
+                </label>
+              </div>
+            )}
+          </div>
 
-      {c.similar_case && <SimilarCaseBlock similarCase={c.similar_case} />}
+          {/* Manual upload */}
+          {selectedPhotoSetId === null && (
+            <div className="mb-4">
+              <p className="text-xs text-gray-400 mb-1">Или загрузите фото вручную:</p>
+              <input
+                type="file"
+                multiple
+                accept="image/*"
+                className="text-sm"
+                onChange={(e) => setManualFiles(Array.from(e.target.files ?? []))}
+              />
+              {manualFiles.length > 0 && (
+                <p className="text-xs text-gray-500 mt-1">{manualFiles.length} файл(ов) выбрано</p>
+              )}
+            </div>
+          )}
 
-      <PriceCardBlock priceCard={c.price_card} />
+          {/* Create preset album */}
+          <details className="mt-2">
+            <summary className="text-xs text-gray-400 cursor-pointer">Добавить новый альбом</summary>
+            <div className="mt-2 space-y-2">
+              <input
+                type="text"
+                placeholder="Название альбома"
+                value={newAlbumName}
+                onChange={(e) => setNewAlbumName(e.target.value)}
+                className="w-full border rounded-lg px-3 py-1.5 text-sm"
+              />
+              <input
+                type="file"
+                multiple
+                accept="image/*"
+                className="text-sm"
+                onChange={(e) => setNewAlbumFiles(Array.from(e.target.files ?? []))}
+              />
+              <button
+                onClick={handleCreateAlbum}
+                disabled={albumCreating || !newAlbumName.trim() || newAlbumFiles.length === 0}
+                className="bg-gray-800 text-white rounded-lg px-4 py-1.5 text-sm disabled:opacity-40"
+              >
+                {albumCreating ? "Сохраняем..." : "Создать альбом"}
+              </button>
+            </div>
+          </details>
+        </section>
 
-      {c.photographer && <PhotographerBlock photographer={c.photographer} />}
+        {/* Block A — Order Input */}
+        <section className="bg-white rounded-2xl p-6 shadow-sm">
+          <h2 className="text-base font-semibold mb-3">Заказ</h2>
+          <textarea
+            className="w-full border rounded-xl p-3 text-sm resize-none h-28"
+            placeholder="Вставьте текст заказа..."
+            value={orderText}
+            onChange={(e) => setOrderText(e.target.value)}
+          />
+          <button
+            onClick={handleGenerate}
+            disabled={loading || !orderText.trim()}
+            className="mt-3 bg-black text-white rounded-xl px-5 py-2 text-sm disabled:opacity-40"
+          >
+            {loading ? "Генерируем..." : "Сгенерировать"}
+          </button>
+        </section>
 
-      {c.work_block && <WorkBlockSection workBlock={c.work_block} />}
+        {/* Block B — Parsed Order */}
+        {parsedOrder && (
+          <section className="bg-white rounded-2xl p-6 shadow-sm">
+            <h2 className="text-base font-semibold mb-3">Данные заказа</h2>
+            <dl className="text-sm space-y-1">
+              {[
+                ["Клиент", parsedOrder.client_name],
+                ["Событие", parsedOrder.event_type],
+                ["Город", parsedOrder.city],
+                ["Дата", parsedOrder.date_text],
+                ["Бюджет", parsedOrder.budget_max ? `${parsedOrder.budget_max} ₽` : null],
+              ].map(([label, value]) =>
+                value ? (
+                  <div key={label as string} className="flex gap-2">
+                    <dt className="text-gray-400 w-24 flex-shrink-0">{label}</dt>
+                    <dd className="font-medium">{value as string}</dd>
+                  </div>
+                ) : null
+              )}
+            </dl>
+          </section>
+        )}
 
-      <Reviews reviews={c.reviews} />
+        {/* Block C — Landing */}
+        {landing && landingUrl && (() => {
+          // Use full entry text from Step 1 if present.
+          // Falls back to "[entry]" for old landings without final_text.
+          const entryText = landing.landing_content.final_text?.trim() || "[entry]";
+          return (
+            <section className="bg-white rounded-2xl p-6 shadow-sm">
+              <div className="flex justify-between items-start gap-4">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm text-gray-800 whitespace-pre-line mb-3">{entryText}</p>
+                  <a
+                    href={landingUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-blue-600 underline break-all"
+                  >
+                    {landingUrl}
+                  </a>
+                </div>
+                <button
+                  onClick={() => copyToClipboard(`${entryText}
+${landingUrl}`, "landing-entry")}
+                  className="text-xs text-gray-400 hover:text-black flex-shrink-0"
+                >
+                  {copiedId === "landing-entry" ? "✓ Скопировано" : "Копировать"}
+                </button>
+              </div>
+            </section>
+          );
+        })()}
 
-      <QuickQuestions questions={c.quick_questions} />
+        {/* Block D — Reply Variants */}
+        {replies.length > 0 && (
+          <section className="bg-white rounded-2xl p-6 shadow-sm">
+            <h2 className="text-base font-semibold mb-3">Варианты отклика</h2>
+            <div className="space-y-4">
+              {replies.map((r) => (
+                <div key={r.id} className="border rounded-xl p-4">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-xs font-medium uppercase text-gray-400">{r.variant_type}</span>
+                    <button
+                      onClick={() => copyToClipboard(r.message_text, r.id)}
+                      className="text-xs text-gray-400 hover:text-black"
+                    >
+                      {copiedId === r.id ? "✓ Скопировано" : "Копировать"}
+                    </button>
+                  </div>
+                  <p className="text-sm whitespace-pre-wrap">{r.message_text}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
-      <CtaButtons cta={c.cta} />
+        {/* Block E — Dialogue Copilot */}
+        {projectId && (
+          <section className="bg-white rounded-2xl p-6 shadow-sm">
+            <h2 className="text-base font-semibold mb-3">Диалог с клиентом</h2>
+            <textarea
+              className="w-full border rounded-xl p-3 text-sm resize-none h-20"
+              placeholder="Вставьте ответ клиента..."
+              value={clientMsg}
+              onChange={(e) => setClientMsg(e.target.value)}
+            />
+            <button
+              onClick={handleDialogue}
+              disabled={loading || !clientMsg.trim()}
+              className="mt-3 bg-black text-white rounded-xl px-5 py-2 text-sm disabled:opacity-40"
+            >
+              {loading ? "Анализируем..." : "Предложить ответ"}
+            </button>
 
+            {suggestion && (
+              <div className="mt-4 space-y-3">
+                <div className="text-xs text-gray-400">
+                  <span className="font-medium text-gray-600">Интент:</span> {suggestion.detected_intent}
+                  {" · "}
+                  <span className="font-medium text-gray-600">Стадия:</span> {suggestion.detected_stage}
+                </div>
+                {suggestion.suggestions.map((s, i) => (
+                  <div key={i} className="border rounded-xl p-3">
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="text-xs font-medium uppercase text-gray-400">{s.type}</span>
+                      <button
+                        onClick={() => copyToClipboard(s.text, `suggestion-${i}`)}
+                        className="text-xs text-gray-400 hover:text-black"
+                      >
+                        {copiedId === `suggestion-${i}` ? "✓ Скопировано" : "Копировать"}
+                      </button>
+                    </div>
+                    <p className="text-sm">{s.text}</p>
+                  </div>
+                ))}
+                <p className="text-xs text-gray-500">
+                  <span className="font-medium">Следующий вопрос:</span> {suggestion.next_best_question}
+                </p>
+              </div>
+            )}
+          </section>
+        )}
+
+      </div>
     </main>
   );
 }
