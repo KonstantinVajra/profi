@@ -8,7 +8,7 @@
  * Render modes:
  *
  *   MVP mode (c.final_text is present and non-empty):
- *     FinalTextBlock → StyleGrid → CtaButtons
+ *     OrderHeader → FinalTextBlock → StyleGrid → CtaButtons
  *     All legacy structural blocks are suppressed.
  *     Layout: white card on a lightly tinted background.
  *
@@ -33,6 +33,7 @@ import {
   CtaButtons,
   PersonalBlockSection,
   FinalTextBlock,
+  OrderHeader,
 } from "@/components/landing/blocks";
 
 // ── Data fetching ─────────────────────────────────────────────────────────
@@ -75,6 +76,14 @@ export default async function LandingPage({
       // White card reads as a distinct surface against it.
       <div className="min-h-screen bg-stone-50 py-8 px-4">
         <div className="max-w-lg mx-auto bg-white rounded-2xl shadow-sm overflow-hidden">
+
+          {/* Contextual order header — built from fields already in LandingPageModel */}
+          {/* Header: title from template_key, price chip if available.
+               hero fields are NOT used here — legacy structural content only. */}
+          <OrderHeader
+            templateKey={c.template_key}
+            price={c.price_card?.price}
+          />
 
           {/* Primary body copy — paragraphs split from Step 1 final_text */}
           <FinalTextBlock text={c.final_text!.trim()} />

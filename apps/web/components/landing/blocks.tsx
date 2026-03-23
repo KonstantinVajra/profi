@@ -59,14 +59,24 @@ export function StyleGrid({ grid }: { grid: StyleGrid }) {
   if (!grid.photo_set_id) {
     return (
       <section className="px-6 pb-5">
+        <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-[0.08em] mb-3">
+          Примеры работ
+        </p>
         <div className="rounded-xl bg-gray-100 h-48 flex items-center justify-center">
-          <span className="text-xs text-gray-400">Примеры работ</span>
+          <span className="text-xs text-gray-400">—</span>
         </div>
       </section>
     );
   }
-  // StyleGridClient renders edge-to-edge inside the card (overflow-hidden on parent).
-  return <StyleGridClient photoSetId={grid.photo_set_id} />;
+  // Label above photo grid. StyleGridClient thumbnails go edge-to-edge via overflow-hidden.
+  return (
+    <section>
+      <p className="px-6 pt-1 pb-3 text-[11px] font-semibold text-gray-400 uppercase tracking-[0.08em]">
+        Примеры похожей съёмки
+      </p>
+      <StyleGridClient photoSetId={grid.photo_set_id} />
+    </section>
+  );
 }
 
 // ── SimilarCase ───────────────────────────────────────────────────────────
@@ -249,6 +259,70 @@ export function PersonalBlockSection({ block }: { block: PersonalBlock }) {
   );
 }
 
+// ── OrderHeader ───────────────────────────────────────────────────────────
+// Compact contextual header for MVP mode.
+// Data sources: only template_key and price_card.price — no hero fields.
+//
+//   title    → derived from template_key via TEMPLATE_TITLE map (never hero.title)
+//   subtitle → fixed neutral string (never hero.subtitle)
+//   chips    → template_key human label + price_card.price if present
+//
+// hero.title / hero.subtitle are legacy structural fields and must not appear
+// in MVP mode to avoid duplicating or conflicting with final_text content.
+
+const TEMPLATE_TITLE: Record<string, string> = {
+  registry_small: "Регистрация",
+  wedding_full:   "Свадебная съёмка",
+  family_session: "Семейная съёмка",
+  event_general:  "Съёмка мероприятия",
+};
+
+const TEMPLATE_CHIP: Record<string, string> = {
+  registry_small: "Регистрация",
+  wedding_full:   "Свадьба",
+  family_session: "Семейная съёмка",
+  event_general:  "Мероприятие",
+};
+
+interface OrderHeaderProps {
+  templateKey: string;
+  price?: string | null;
+}
+
+export function OrderHeader({ templateKey, price }: OrderHeaderProps) {
+  const title =
+    TEMPLATE_TITLE[templateKey] ?? "Персональный отклик";
+
+  // Chips: event type label + price if present. Only non-empty values rendered.
+  const chips: string[] = [];
+  const chipLabel = TEMPLATE_CHIP[templateKey];
+  if (chipLabel) chips.push(chipLabel);
+  if (price?.trim()) chips.push(price.trim());
+
+  return (
+    <header className="px-6 pt-7 pb-5 border-b border-gray-100">
+      <h1 className="text-[17px] font-semibold leading-snug tracking-tight text-gray-900">
+        {title}
+      </h1>
+      <p className="mt-1 text-[13px] text-gray-400 leading-relaxed">
+        Персональный отклик по вашему запросу
+      </p>
+      {chips.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {chips.map((chip, i) => (
+            <span
+              key={i}
+              className="text-[11px] bg-stone-100 text-stone-500 px-2.5 py-1 rounded-full font-medium tracking-wide"
+            >
+              {chip}
+            </span>
+          ))}
+        </div>
+      )}
+    </header>
+  );
+}
+
 // ── FinalText ─────────────────────────────────────────────────────────────
 // Primary landing content (MVP). Sole output of Step 1 rendered to client.
 // entry_message is NOT rendered here.
@@ -259,7 +333,7 @@ export function FinalTextBlock({ text }: { text: string }) {
   const paragraphs = text.split(/\n\n+/).filter((p) => p.trim());
 
   return (
-    <section className="px-6 pt-8 pb-6">
+    <section className="px-6 pt-6 pb-6">
       <div className="space-y-4">
         {paragraphs.map((para, i) => (
           <p
@@ -278,8 +352,11 @@ export function FinalTextBlock({ text }: { text: string }) {
 
 export function CtaButtons({ cta }: { cta: CtaBlock }) {
   return (
-    <section className="px-6 pt-5 pb-8 space-y-3">
-      <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-[0.1em] text-center mb-5">
+    <section className="px-6 pt-6 pb-8 space-y-3 border-t border-gray-100">
+      <p className="text-[11px] text-gray-400 text-center mb-1">
+        Если откликается такой формат
+      </p>
+      <p className="text-[15px] font-semibold text-gray-900 text-center mb-5">
         Напишите мне
       </p>
 
