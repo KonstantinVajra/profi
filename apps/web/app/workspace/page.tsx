@@ -31,7 +31,10 @@ interface ReplyVariantData {
 
 interface LandingData {
   landing_page: { slug: string; status: string };
-  landing_content: { hero: { title: string } };
+  landing_content: {
+    hero: { title: string };
+    final_text?: string;  // primary entry text from Step 1; null for old landings
+  };
 }
 
 interface SuggestionData {
@@ -326,20 +329,35 @@ export default function WorkspacePage() {
         )}
 
         {/* Block C — Landing */}
-        {landing && landingUrl && (
-          <section className="bg-white rounded-2xl p-6 shadow-sm">
-            <h2 className="text-base font-semibold mb-3">Лендинг</h2>
-            <p className="text-sm text-gray-500 mb-1">{landing.landing_content.hero.title}</p>
-            <a
-              href={landingUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm text-blue-600 underline break-all"
-            >
-              {landingUrl}
-            </a>
-          </section>
-        )}
+        {landing && landingUrl && (() => {
+          // Use full entry text from Step 1 if present.
+          // Falls back to "[entry]" for old landings without final_text.
+          const entryText = landing.landing_content.final_text?.trim() || "[entry]";
+          return (
+            <section className="bg-white rounded-2xl p-6 shadow-sm">
+              <div className="flex justify-between items-start gap-4">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm text-gray-800 whitespace-pre-line mb-3">{entryText}</p>
+                  <a
+                    href={landingUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-blue-600 underline break-all"
+                  >
+                    {landingUrl}
+                  </a>
+                </div>
+                <button
+                  onClick={() => copyToClipboard(`${entryText}
+${landingUrl}`, "landing-entry")}
+                  className="text-xs text-gray-400 hover:text-black flex-shrink-0"
+                >
+                  {copiedId === "landing-entry" ? "✓ Скопировано" : "Копировать"}
+                </button>
+              </div>
+            </section>
+          );
+        })()}
 
         {/* Block D — Reply Variants */}
         {replies.length > 0 && (
