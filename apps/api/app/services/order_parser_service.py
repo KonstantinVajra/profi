@@ -1,17 +1,22 @@
 """
 OrderParserService
 ──────────────────
-Converts raw order text into a validated ParsedOrder.
+Converts a raw order (text or screenshot) into a validated ParsedOrder.
 
-Pipeline:
+Two extraction modes:
+  parse_text(raw_text, ...)  — text-based extraction via extract_json()
+  parse_image(image_bytes, image_media_type, ...) — vision-based via extract_json_with_image()
+
+Both modes:
   1. load system prompt from packages/prompts/order_parse_prompt.txt
-  2. call OpenAI via OpenAIClient.extract_json()
+  2. call OpenAI (text or vision mode respectively)
   3. post-process raw dict (date coercion, normalisation)
   4. validate via Pydantic ParsedOrder schema
-  5. return ParsedOrder
+  5. write PipelineTrace stage="extraction"
+  6. return ParsedOrder
 
 This service has NO knowledge of DB or HTTP.
-It receives a string, returns a ParsedOrder.
+It receives plain Python data (str or bytes), returns a ParsedOrder.
 """
 
 import logging
@@ -48,14 +53,14 @@ class OrderParserService:
 
     # ── public ────────────────────────────────────────────────────────────
 
-    def parse(self, raw_text: str, project_id: str | None = None, db=None) -> ParsedOrder:
+    def parse_text(self, raw_text: str, project_id: str | None = None, db=None) -> ParsedOrder:
         """
-        Extract structured order fields from raw text using OpenAI.
+        Extract structured order fields from raw text using OpenAI (JSON mode).
 
         Args:
-            raw_text: order text as provided by the user
+            raw_text:   order text as provided by the user
             project_id: optional — if provided along with db, trace is written
-            db: optional SQLAlchemy session for trace persistence
+            db:         optional SQLAlchemy session for trace persistence
 
         Returns:
             Validated ParsedOrder instance.
@@ -127,6 +132,110 @@ class OrderParserService:
         logger.info(
             "Order parsed | event_type=%s | city=%s | budget=%s | confidence=%s",
             parsed.event_type, parsed.city, parsed.budget_max, parsed.extracted_confidence
+        )
+        return parsed
+
+    def parse_image(
+        self,
+        image_bytes: bytes,
+        image_media_type: str = "image/jpeg",
+        project_id: str | None = None,
+        db=None,
+    ) -> ParsedOrder:
+        """
+        Extract structured order fields from a screenshot using OpenAI vision mode.
+
+        The caller (router) reads the file and passes raw bytes.
+        This method has no knowledge of UploadFile or file storage.
+
+        Args:
+            image_bytes:       raw image bytes
+            image_media_type:  MIME type, e.g. "image/jpeg" or "image/png"
+            project_id:        optional — if provided along with db, trace is written
+            db:                optional SQLAlchemy session for trace persistence
+
+        Returns:
+            Validated ParsedOrder instance.
+
+        Raises:
+            ValueError: if image is unreadable, AI response is empty, or validation fails.
+                        Never silently degrades — caller must handle the error.
+        """
+        import json as _json
+
+        if not image_bytes:
+            raise ValueError("image_bytes must not be empty")
+
+        logger.info("Parsing order from screenshot | media_type=%s | size=%d", image_media_type, len(image_bytes))
+
+        prompt_text = self._system_prompt + "\n\n[input: screenshot]"
+        input_payload = {"input_type": "screenshot", "image_media_type": image_media_type}
+
+        try:
+            raw_dict = openai_client.extract_json_with_image(
+                system_prompt=self._system_prompt,
+                image_bytes=image_bytes,
+                image_media_type=image_media_type,
+                temperature=0.1,
+                max_tokens=800,
+            )
+        except Exception as exc:
+            logger.error("OpenAI vision call failed during extraction: %s", exc)
+            self._write_trace(
+                project_id=project_id,
+                db=db,
+                input_payload=input_payload,
+                prompt_text=prompt_text,
+                raw_ai_output=None,
+                parsed_output=None,
+            )
+            raise ValueError(f"AI vision call failed: {exc}") from exc
+
+        # Explicit check — empty dict means unreadable screenshot, not a parse error
+        if not raw_dict:
+            self._write_trace(
+                project_id=project_id,
+                db=db,
+                input_payload=input_payload,
+                prompt_text=prompt_text,
+                raw_ai_output="{}",
+                parsed_output=None,
+            )
+            raise ValueError(
+                "Screenshot could not be read: AI returned an empty result. "
+                "Please provide a clearer image or enter the order text manually."
+            )
+
+        raw_ai_str = _json.dumps(raw_dict, ensure_ascii=False)
+
+        cleaned = self._post_process(raw_dict)
+
+        try:
+            parsed = ParsedOrder.model_validate(cleaned)
+        except Exception as exc:
+            logger.error("ParsedOrder validation failed (vision): %s | raw: %s", exc, cleaned)
+            self._write_trace(
+                project_id=project_id,
+                db=db,
+                input_payload=input_payload,
+                prompt_text=prompt_text,
+                raw_ai_output=raw_ai_str,
+                parsed_output=None,
+            )
+            raise ValueError(f"AI vision output did not match ParsedOrder schema: {exc}") from exc
+
+        self._write_trace(
+            project_id=project_id,
+            db=db,
+            input_payload=input_payload,
+            prompt_text=prompt_text,
+            raw_ai_output=raw_ai_str,
+            parsed_output=parsed.model_dump(mode="json"),
+        )
+
+        logger.info(
+            "Order parsed from screenshot | event_type=%s | city=%s | confidence=%s",
+            parsed.event_type, parsed.city, parsed.extracted_confidence,
         )
         return parsed
 
@@ -224,5 +333,5 @@ class OrderParserService:
         return result
 
 
-# Module-level singleton — imported by the router
+# Module-level singleton — imported by the orders router
 order_parser_service = OrderParserService()

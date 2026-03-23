@@ -5,9 +5,10 @@ Thin wrapper around the OpenAI SDK.
 
 Responsibilities:
   - hold a single configured client instance
-  - expose two methods:
-    extract_json() — sends system + user message, expects JSON back, returns dict
-    extract_text() — sends system + user message, returns raw text string
+  - expose three methods:
+    extract_json()            — sends system + user message, expects JSON back, returns dict
+    extract_text()            — sends system + user message, returns raw text string
+    extract_json_with_image() — sends system prompt + image bytes, expects JSON back, returns dict
 
 All prompts are passed in by callers — this module knows nothing
 about business logic.
@@ -119,6 +120,90 @@ class OpenAIClient:
                      response.usage.total_tokens if response.usage else 0, len(text))
 
         return text
+
+
+    def extract_json_with_image(
+        self,
+        system_prompt: str,
+        image_bytes: bytes,
+        image_media_type: str = "image/jpeg",
+        temperature: float = 0.1,
+        max_tokens: int = 1000,
+    ) -> dict[str, Any]:
+        """
+        Send a system prompt and an image to the model and parse the response as JSON.
+        Used for screenshot-based order extraction (vision mode).
+
+        The image is base64-encoded and sent as a data URL.
+        Response format is NOT set to json_object because vision mode does not
+        support it in all model configurations — JSON is enforced via prompt instead.
+
+        Args:
+            system_prompt:     instructions telling the model what to extract
+            image_bytes:       raw image bytes (read by the caller, not this method)
+            image_media_type:  MIME type, e.g. "image/jpeg" or "image/png"
+            temperature:       0.1 default — extraction should be deterministic
+            max_tokens:        budget for the response
+
+        Returns:
+            Parsed JSON dict.
+
+        Raises:
+            ValueError: if the response cannot be parsed as JSON.
+            openai.APIError: on network / auth failures (let caller handle).
+        """
+        import base64
+
+        logger.debug(
+            "OpenAI vision request | model=%s | image_len=%d",
+            self._model, len(image_bytes),
+        )
+
+        image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+        data_url = f"data:{image_media_type};base64,{image_b64}"
+
+        response: ChatCompletion = self._client.chat.completions.create(
+            model=self._model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": data_url},
+                        },
+                        {
+                            "type": "text",
+                            "text": "Extract order fields from this screenshot. Return ONLY valid JSON.",
+                        },
+                    ],
+                },
+            ],
+        )
+
+        raw = response.choices[0].message.content or ""
+        logger.debug(
+            "OpenAI vision response | tokens=%d | raw_len=%d",
+            response.usage.total_tokens if response.usage else 0, len(raw),
+        )
+
+        # Strip markdown code fences if model wraps JSON in ```json ... ```
+        stripped = raw.strip()
+        if stripped.startswith("```"):
+            lines = stripped.splitlines()
+            stripped = "\n".join(
+                line for line in lines
+                if not line.strip().startswith("```")
+            ).strip()
+
+        try:
+            return json.loads(stripped)
+        except json.JSONDecodeError as exc:
+            logger.error("Failed to parse vision response as JSON: %s", raw[:300])
+            raise ValueError(f"OpenAI vision returned non-JSON response: {raw[:200]}") from exc
 
 
 # Module-level singleton — imported by services

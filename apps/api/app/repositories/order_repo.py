@@ -56,13 +56,23 @@ class OrderRepository:
     def create_order_input(
         self,
         project_id: str,
-        raw_text: str,
+        raw_text: str | None = None,
+        screenshot_path: str | None = None,
         source_type: str = "text",
     ) -> OrderInput:
-        """Persist raw user input before parsing."""
+        """
+        Persist raw user input before parsing.
+
+        source_type controlled vocabulary: "text" | "screenshot"
+
+        For text flow: raw_text is set, screenshot_path is None.
+        For image flow: screenshot_path is set, raw_text is None.
+        Both fields are optional at the DB level to support either mode.
+        """
         order_input = OrderInput(
             project_id=project_id,
             raw_text=raw_text,
+            screenshot_path=screenshot_path,
             source_type=source_type,
         )
         self.db.add(order_input)

@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import {
   createProject,
   extractOrder,
+  extractOrderFromImage,
   generateLanding,
   generateReplies,
   suggestDialogueReply,
@@ -74,6 +75,9 @@ export default function WorkspacePage() {
   const [newAlbumFiles, setNewAlbumFiles] = useState<File[]>([]);
   const [albumCreating, setAlbumCreating] = useState(false);
 
+  // screenshot state — for order extraction via image
+  const [screenshotFile, setScreenshotFile] = useState<File | null>(null);
+
   async function copyToClipboard(text: string, id: string) {
     try {
       if (navigator.clipboard && window.isSecureContext) {
@@ -129,7 +133,8 @@ export default function WorkspacePage() {
   // ── Step 1-4: generate everything ───────────────────────────────────────
 
   async function handleGenerate() {
-    if (!orderText.trim()) return;
+    // text has priority over screenshot; at least one must be present
+    if (!orderText.trim() && !screenshotFile) return;
     setLoading(true);
     setError(null);
     setParsedOrder(null);
@@ -142,8 +147,12 @@ export default function WorkspacePage() {
       const project = await createProject() as { id: string };
       setProjectId(project.id);
 
-      // 2. extract order
-      const parsed = await extractOrder(project.id, orderText) as ParsedOrderData;
+      // 2. extract order — text takes priority over screenshot
+      const parsed = (
+        orderText.trim()
+          ? await extractOrder(project.id, orderText)
+          : await extractOrderFromImage(project.id, screenshotFile!)
+      ) as ParsedOrderData;
       setParsedOrder(parsed);
 
       // 3. generate landing — resolve photo set
@@ -160,6 +169,9 @@ export default function WorkspacePage() {
       const landingUrl = `${siteUrl}/r/${slug}`;
       const repliesResult = await generateReplies(project.id, landingUrl) as { reply_variants: ReplyVariantData[] };
       setReplies(repliesResult.reply_variants);
+
+      // reset screenshot after successful generation
+      setScreenshotFile(null);
 
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Unknown error");
@@ -295,11 +307,36 @@ export default function WorkspacePage() {
             className="w-full border rounded-xl p-3 text-sm resize-none h-28"
             placeholder="Вставьте текст заказа..."
             value={orderText}
-            onChange={(e) => setOrderText(e.target.value)}
+            onChange={(e) => {
+              setOrderText(e.target.value);
+              // clear screenshot when user types text to avoid ambiguous state
+              if (e.target.value.trim()) {
+                setScreenshotFile(null);
+              }
+            }}
           />
+          <div className="mt-3">
+            <p className="text-xs text-gray-400 mb-1">или загрузите скриншот заказа:</p>
+            <input
+              type="file"
+              accept="image/*"
+              className="text-sm"
+              onChange={(e) => {
+                const file = e.target.files?.[0] ?? null;
+                if (file && !file.type.startsWith("image/")) {
+                  setError("Можно загрузить только изображение");
+                  return;
+                }
+                setScreenshotFile(file);
+              }}
+            />
+            {screenshotFile && (
+              <p className="text-xs text-gray-500 mt-1">{screenshotFile.name}</p>
+            )}
+          </div>
           <button
             onClick={handleGenerate}
-            disabled={loading || !orderText.trim()}
+            disabled={loading || (!orderText.trim() && !screenshotFile)}
             className="mt-3 bg-black text-white rounded-xl px-5 py-2 text-sm disabled:opacity-40"
           >
             {loading ? "Генерируем..." : "Сгенерировать"}

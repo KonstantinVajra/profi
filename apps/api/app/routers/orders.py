@@ -1,27 +1,56 @@
 """
 Orders router
 ─────────────
-POST /orders/extract — parse raw order text, return ParsedOrderResponse
+POST /orders/extract       — parse raw order text, return ParsedOrderResponse
+POST /orders/extract/image — parse order from screenshot, return ParsedOrderResponse
 
-Flow:
+Both endpoints produce the same ParsedOrderResponse and feed the same downstream
+pipeline (Generate Landing → Generate Replies → ...).
+
+Text flow:
   1. get project (404 if not found)
-  2. save raw text to order_inputs
-  3. call OrderParserService (LLM extraction + Pydantic validation)
+  2. save raw text to order_inputs (source_type="text")
+  3. call OrderParserService.parse_text()
   4. save result to parsed_orders
   5. return ParsedOrderResponse
+
+Image flow:
+  1. get project (404 if not found)
+  2. read image bytes from UploadFile (router responsibility)
+  3. save screenshot file to storage/orders/{order_input_id}/screenshot.{ext}
+  4. save metadata to order_inputs (source_type="screenshot", screenshot_path)
+  5. call OrderParserService.parse_image(image_bytes, media_type)
+  6. save result to parsed_orders
+  7. return ParsedOrderResponse
 """
 
 import logging
-from fastapi import APIRouter, Depends, HTTPException, status
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.schemas.order import OrderInputCreate, ParsedOrderResponse
 from app.repositories.order_repo import OrderRepository
 from app.services.order_parser_service import order_parser_service
+from app.config import settings
+
+# Storage root for order screenshots — same base path used across storage layer.
+# Defined locally to avoid coupling orders router to landing photo service.
+_ORDERS_STORAGE_ROOT = Path(getattr(settings, "storage_root", "/var/storage/landing_reply"))
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# Allowed MIME types for screenshot upload
+_ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+_IMAGE_EXT = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+    "image/gif": "gif",
+}
 
 
 @router.post(
@@ -44,7 +73,7 @@ def extract_order(body: OrderInputCreate, db: Session = Depends(get_db)):
 
     # 3. LLM extraction + Pydantic validation
     try:
-        parsed = order_parser_service.parse(body.raw_text, project_id=str(body.project_id), db=db)
+        parsed = order_parser_service.parse_text(body.raw_text, project_id=str(body.project_id), db=db)
     except ValueError as exc:
         logger.error("Order parsing failed | project=%s | error=%s", body.project_id, exc)
         raise HTTPException(
@@ -60,6 +89,96 @@ def extract_order(body: OrderInputCreate, db: Session = Depends(get_db)):
     )
 
     # 5. return
+    return ParsedOrderResponse(
+        id=record.id,
+        project_id=record.project_id,
+        order_input_id=record.order_input_id,
+        **parsed.model_dump(),
+    )
+
+
+@router.post(
+    "/extract/image",
+    response_model=ParsedOrderResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Extract structured order fields from a screenshot (vision mode)",
+)
+async def extract_order_from_image(
+    project_id: str = Form(...),
+    screenshot: UploadFile = File(...),
+    db=Depends(get_db),
+):
+    """
+    Accept a screenshot of a client order and extract structured fields using AI vision.
+
+    Returns the same ParsedOrderResponse as POST /orders/extract.
+    The downstream pipeline (landing, replies, dialogue) is identical for both modes.
+    """
+    # 1. validate project exists
+    repo = OrderRepository(db)
+    repo.get_project(project_id)
+
+    # 2. validate content type
+    media_type = screenshot.content_type or "image/jpeg"
+    if media_type not in _ALLOWED_IMAGE_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail=f"Unsupported image type: {media_type}. Allowed: {sorted(_ALLOWED_IMAGE_TYPES)}",
+        )
+
+    # 3. read bytes — router is responsible for reading UploadFile
+    image_bytes = await screenshot.read()
+    if not image_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Uploaded file is empty.",
+        )
+
+    # 4. compute storage path using a transient UUID, then save file and record together.
+    #    This avoids a two-step DB write (create then update screenshot_path).
+    import uuid as _uuid_mod
+    transient_id = str(_uuid_mod.uuid4())
+    ext = _IMAGE_EXT.get(media_type, "jpg")
+    storage_key = f"orders/{transient_id}/screenshot.{ext}"
+
+    # 5. save screenshot to storage/orders/{transient_id}/screenshot.{ext}
+    dest = _ORDERS_STORAGE_ROOT / storage_key
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(image_bytes)
+
+    # 6. create OrderInput with screenshot_path already set
+    order_input = repo.create_order_input(
+        project_id=project_id,
+        raw_text=None,
+        screenshot_path=storage_key,
+        source_type="screenshot",
+    )
+
+    # 7. AI vision extraction — service receives bytes only, not UploadFile
+    try:
+        parsed = order_parser_service.parse_image(
+            image_bytes=image_bytes,
+            image_media_type=media_type,
+            project_id=project_id,
+            db=db,
+        )
+    except ValueError as exc:
+        logger.error(
+            "Screenshot parsing failed | project=%s | error=%s", project_id, exc
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        )
+
+    # 8. save parsed order to DB
+    record = repo.create_parsed_order(
+        project_id=project_id,
+        order_input_id=order_input.id,
+        parsed=parsed,
+    )
+
+    # 9. return same response shape as text extraction
     return ParsedOrderResponse(
         id=record.id,
         project_id=record.project_id,

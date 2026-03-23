@@ -30,6 +30,23 @@ export const extractOrder = (projectId: string, rawText: string) =>
     body: JSON.stringify({ project_id: projectId, raw_text: rawText }),
   });
 
+// ── Orders (screenshot) ──────────────────────────────────────────────────
+// Uses fetch directly (not request()) to avoid Content-Type: application/json
+// overriding the multipart/form-data boundary set by the browser.
+export const extractOrderFromImage = (projectId: string, file: File) => {
+  const form = new FormData();
+  form.append("project_id", projectId);
+  form.append("screenshot", file);
+  const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+  return fetch(`${BASE}/orders/extract/image`, {
+    method: "POST",
+    body: form,
+  }).then((res) => {
+    if (!res.ok) throw new Error(`Screenshot extraction failed: ${res.status}`);
+    return res.json();
+  });
+};
+
 // ── Replies ───────────────────────────────────────────────────────────────
 export const generateReplies = (projectId: string, landingUrl?: string) =>
   request(`/projects/${projectId}/replies/generate`, {
