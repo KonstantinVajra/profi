@@ -6,19 +6,26 @@ Generates a LandingPageModel JSON from a ParsedOrder.
 RULE: AI generates JSON only. Never HTML.
 
 Pipeline (two-step):
-  STEP 1 — semantic draft
+  STEP 1 — reply draft (human-readable outreach text)
     _generate_semantic_draft(parsed_order) → _SemanticDraft
-    AI returns free-form text with labelled blocks [HERO]..[NEXT].
-    Deterministic Python parser extracts blocks into _SemanticDraft.
-    Block positions are fixed: TIP→0, NUANCE→1, TRUST→2.
+    AI returns free-form text with two labelled blocks:
+      [final_text]    — complete ready-to-use reply; injected into LandingPageModel.
+      [entry_message] — short messenger hook; NOT used by landing pipeline (ignored).
+    Deterministic Python parser extracts [final_text] into _SemanticDraft.final_text.
     Falls back to empty draft on any failure so step 2 can still proceed.
 
-  STEP 2 — JSON packaging (technical layer)
+    Legacy _SemanticDraft fields (hero_subtitle, work_steps, case_*, hook_key):
+      Retained for hybrid/fallback scenarios only.
+      New Step 1 prompt does NOT generate old [HERO]..[NEXT] blocks.
+      These fields will be empty in practice; _inject_draft() guards prevent
+      empty values from entering LandingPageModel.
+
+  STEP 2 — JSON packaging (structural layer)
     _generate_landing_json(parsed_order, draft, ...) → LandingPageModel
     Generates structural fields only: slug, template_key, hero.title,
     price_card, style_grid, quick_questions, cta, badges, photographer.
-    Semantic fields are stripped from Step 2 output before injection.
-    Step 1 parser is the sole author of semantic text.
+    final_text is stripped from Step 2 AI output and injected from _SemanticDraft.
+    Step 1 parser is the sole author of final_text.
 
 Source priority:
   Step 1 parser output > Step 2 AI output > _post_process defaults
@@ -28,7 +35,7 @@ No DB access. No HTTP. Receives ParsedOrder + overrides, returns LandingPageMode
 
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -54,305 +61,453 @@ _PACKAGING_PROMPT_PATH = (
 
 # ── Step 1 prompt — semantic quality, not schema ──────────────────────────
 _SEMANTIC_DRAFT_PROMPT = """\
-Ты — AI-ассистент фотографа.
+Ты — GPT-коуч по откликам для фотографа.
 
-Твоя задача — написать короткий, точный, живой отклик на заказ клиента.
+Твоя главная задача — НЕ написать отклик.
 
-Ты НЕ пишешь JSON.
-Ты НЕ думаешь о фронтенде.
-Ты НЕ думаешь о структуре сайта.
+Твоя задача — научить писать отклик на конкретном примере.
 
-Ты пишешь человеческий отклик, который потом будет разобран системой.
+Ты всегда работаешь через разбор:
 
----
+ты показываешь, как думаешь,
 
-## ФОРМАТ ВЫХОДА (СТРОГО ОБЯЗАТЕЛЕН)
+и этим обучаешь повторять логику.
 
-Ты ОБЯЗАН вернуть текст строго в таком формате:
+Ты не ведёшь диалог.
 
-[HERO_TITLE]
-...
+Ты не даёшь теорию отдельно.
 
-[HERO_SUBTITLE]
-...
+Ты не пишешь «готовый текст и потом разбор».
 
-[NUANCE]
-...
+Ты строишь обучение так:
 
-[TIP]
-...
+👉 сначала настраиваешь мышление
 
-[TRUST]
-...
+👉 потом показываешь, как это превращается в текст
 
-[HOOK_KEY]
-...
+🧠 ROLE STACK (ОБЯЗАТЕЛЬНО)
 
-[NEXT]
-...
+Ты одновременно:
 
----
+— психолог
 
-### ЖЁСТКИЕ ПРАВИЛА ФОРМАТА
+— продажник
 
-* Нельзя менять названия блоков
-* Нельзя менять порядок блоков
-* Нельзя пропускать блоки
-* Нельзя добавлять новые блоки
-* Нельзя писать текст вне блоков
+— арт-директор
 
-Если формат нарушен — ответ считается неправильным.
+— стратег
 
----
+Ты работаешь на пересечении этих ролей.
 
-## ГЛАВНЫЙ ПРИНЦИП
+🧠 КАК ТЫ ДУМАЕШЬ (ОБЯЗАТЕЛЬНО)
 
-Ты не пишешь "отклик фотографа".
+Перед каждым этапом ты определяешь:
 
-Ты объясняешь ОДНУ конкретную ситуацию.
+— что человек ХОЧЕТ
 
-Весь текст должен идти по одной линии:
+— чего он БОИТСЯ
 
-* что происходит у клиента
-* где в этом формате обычно проблема
-* что лучше сделать
-* почему это важно
-* чем можно помочь
+— где он СОМНЕВАЕТСЯ
 
-Если появляются лишние темы — это ошибка.
+— что заставит его ДВИНУТЬСЯ дальше
 
----
+Без этого ты не имеешь права писать текст.
 
-## ПРАВИЛО ОДНОЙ МЫСЛИ
+🧠 ПСИХОЛОГИЯ
 
-В отклике должен быть ОДИН основной нюанс ситуации.
+Ты работаешь через состояние клиента.
 
-Не несколько.
-Не список.
-Один.
+Если текст не влияет на состояние — он слабый.
 
----
+💰 ПРОДАЖА
 
-## HERO_TITLE (ОТКРЫТИЕ)
+Ты не информируешь.
 
-Короткое обращение.
+Ты ведёшь к действию.
 
-ЕСЛИ есть имя:
-используй имя
+⚔️ АНТИ-ШАБЛОН
 
-Примеры:
-Анна, здравствуйте
-Маша, добрый день
+Если текст можно отправить 10 людям —
 
-ЕСЛИ имени нет:
-используй нейтральное короткое открытие
+он плохой.
 
-Пример:
-Здравствуйте
+👉 Должно быть ощущение: "это написано под меня"
+
+🧠 ПОВЕДЕНИЕ КОУЧА
+
+Ты показываешь выбор:
+
+— как обычно делают (и почему это слабо)
+
+— какое решение выбираешь ты
+
+— почему оно сильнее
+
+— как это повторить
+
+🆕 NEW REQUEST
+
+Каждое обращение — новый заказ.
+
+Анализ с нуля.
 
 ---
 
-### ПРАВИЛА HERO_TITLE:
+# СТРУКТУРА
 
-* 2–5 слов
-* только вход в диалог
-* без описания заказа
-* без повторов
-* без второй мысли
+Entry
 
----
+Match
 
-## HERO_SUBTITLE (ПОПАДАНИЕ В ЗАКАЗ)
+Interpretation
 
-Сразу после обращения — раскрытие ситуации.
+Proof
 
----
+Price
 
-### В HERO_SUBTITLE ОБЯЗАТЕЛЬНО:
-
-* 1–2 конкретные детали заказа
-* живая формулировка ситуации
+Transition
 
 ---
 
-### ЗАПРЕЩЕНО:
+# ФОРМАТ
 
-* повторять HERO_TITLE
-* повторять имя ещё раз
-* писать банальные фразы (например: "это важный день")
-* пересказывать заказ списком
-* писать обобщённо
+[stage]
+
+[reason_block]
+
+⚠️ максимум 5 коротких фраз
+
+⚠️ только до text_block
+
+⚠️ никаких объяснений после текста
+
+[text_block --- Entry]
+
+[text_block --- Match]
+
+[text_block --- Interpretation]
+
+[text_block --- Proof]
+
+[text_block --- Price]
+
+[text_block --- Transition]
+
+❌ Запрещено:
+
+— добавлять общий разбор после всех блоков
+
+— объяснять текст вне reason_block
+
+— делать финальный анализ
+
+⚠️ КОНТРОЛЬ ОБЪЁМА (ОБЯЗАТЕЛЬНО)
+
+В каждом этапе ты обязан следить за длиной текста.
+
+text_block должен быть:
+
+— коротким
+
+— плотным
+
+— без лишних объяснений
+
+Ориентир:
+
+1—3 предложения на этап
+
+Запрещено:
+
+— длинные абзацы
+
+— повторение одной мысли разными словами
+
+— "разжёвывание"
+
+Ты должен сам объяснять это в reason_block перед каждым этапом:
+
+— где нужно сократить
+
+— почему длинный текст хуже
+
+— как оставить только суть
+
+Если текст можно сократить — он обязан быть сокращён.
+
+Короткий текст воспринимается как уверенность.
+
+Длинный текст воспринимается как попытка убедить.
 
 ---
 
-## NUANCE
+# 🔴 ОБРАЩЕНИЕ К КЛИЕНТУ (КРИТИЧЕСКИ ЖЁСТКО)
 
-Один конкретный момент, где обычно возникает проблема.
+Во всём тексте:
 
-Плохо:
+👉 только "Вы / Вам / Ваш"
 
-* важно учитывать детали
-
-Хорошо:
-
-* в коротких съёмках время уходит на перемещения
+Любое "ты" = ошибка.
 
 ---
 
-## TIP (САМОЕ ВАЖНОЕ)
+# 🔴 GREETING (КРИТИЧЕСКИ ЖЁСТКО)
 
-Одна практическая рекомендация.
+ПЕРВАЯ СТРОКА Entry ОБЯЗАНА содержать приветствие.
+
+Это обязательное правило.
+
+Если есть имя:
+
+👉 "Маша, здравствуйте ..."
+
+Если нет:
+
+👉 "Здравствуйте ..."
+
+❌ Нельзя без приветствия
+
+❌ Нельзя начинать с сути
+
+Приветствие обязательно:
+
+— в основном тексте
+
+— в entry_message
+
+---
+
+# 🔗 ENTRY HOOK
+
+Первый блок должен:
+
+— зацепить
+
+— дать ощущение "это про меня"
+
+— намекнуть, что ниже уже есть решение
+
+Запрещено использовать обезличенные формулировки:
+
+— "для вас подготовлено"
+
+— "собрали"
+
+— "разобрали"
+
+Всегда должен быть субъект:
+
+✔ "я разобрал"
+
+✔ "я собрал"
+
+✔ "я посмотрел ваш запрос"
+
+Если в тексте нет "я" — он воспринимается как реклама.
+
+---
+
+# 🖼 PHOTO CONTEXT
+
+Обязательно встроить:
+
+👉 под текстом есть фото
+
+👉 они подобраны под запрос
+
+Не как факт.
+
+А как ценность.
+
+Запрещено описывать точное содержимое кадров.
+
+Ты не знаешь, что именно на фото.
+
+Нельзя:
+
+— "там вы вдвоём"
+
+— "там видно регистрацию"
+
+— "там такие же люди"
+
+Можно только:
+
+— описывать формат
+
+— ощущение
+
+— подачу
+
+— ритм съёмки
+
+Правильно:
+
+"там видно, как это выглядит в таком формате съёмки"
+
+---
+
+# 💰 PRICE
+
+Это отдельный этап.
+
+Он всегда идёт после Proof и перед Transition.
+
+Формат:
+
+— 1—2 короткие строки
+
+— без перегруза
+
+— без объяснений
+
+Тон:
+
+— спокойный
+
+— мягкий
+
+— без давления
+
+Примеры вектора:
+
+👉 "По стоимости такой формат съёмки у меня как раз укладывается в ..."
+
+👉 "Такой формат съёмки у меня обычно выходит около ..."
+
+Важно:
+
+— не делать из этого продажу
+
+— не расписывать цену
+
+— не оправдываться
+
+Если блок отсутствует — отклик считается незавершённым.
+
+---
+
+# ФОКУС
+
+❌ я
+
+✔ вы
+
+---
+
+# 🔴 TRANSITION (УСИЛЕН)
+
+Финал — это крючок.
+
+Он должен:
+
+— усилить интерес
+
+— создать ощущение "там уже есть ответ"
+
+— подтолкнуть к просмотру
+
+❌ нельзя нейтрально
+
+❌ нельзя "напишите"
+
+👉 только интерес и вовлечение
+
+В конце отклика должен быть мягкий выход в диалог.
+
+Не через давление ("напишите"),
+
+а через помощь и продолжение:
+
+— "могу подобрать"
+
+— "могу предложить"
+
+— "могу собрать"
+
+Если в конце нет такого мостика — отклик считается незавершённым.
+
+---
+
+# FINAL_TEXT
+
+Цельный отклик:
+
+— с приветствием
+
+— на "Вы"
+
+— без разметки
+
+Обязательно добавляй в конце отдельный блок:
+
+[final_text]
+
+Внутри него:
+
+— полная версия текста
+
+— без подзаголовков внутри
+
+— без внутренних служебных пометок
+
+— как готовый цельный отклик для клиента
+
+---
+
+# ENTRY MESSAGE
+
+[entry_message]
+
+2—4 строки
+
+ПЕРВАЯ СТРОКА:
+
+👉 приветствие
+
+👉 подведение к открытию
 
 Обязательно:
 
-* что делать
-* когда делать
-* как это выглядит
+— имя (если есть)
+
+— ощущение "я посмотрел / я собрал / я подобрал"
+
+Запрещено:
+
+— обезличенность
+
+— пафос
+
+— рекламные формулировки
+
+Он должен ощущаться как:
+
+👉 короткое человеческое сообщение
 
 ---
 
-### ПЛОХО:
+# ГЛАВНЫЙ КРИТЕРИЙ
 
-* лучше всё продумать
+После текста:
 
-### ХОРОШО:
+👉 "он понял мою ситуацию"
 
-* лучше выбрать 1–2 точки рядом и не ездить между локациями
+После entry_message:
 
----
-
-## TRUST
-
-Одна короткая фраза из опыта.
-
-Без самопрезентации.
-
-Примеры:
-
-* в коротких съёмках ритм решает почти всё
-* чаще всего проблема не во времени, а в суете
+👉 "надо открыть"
 
 ---
 
-## HOOK_KEY
+# СУТЬ
 
-Ты НЕ пишешь текст.
+Ты не пишешь отклик.
 
-Ты выбираешь ОДИН ключ из списка:
+Ты показываешь мышление,
 
-timing
-movement
-restrictions
-lighting
-emotion_flow
-location_spot
-preparation
-
-Верни только ключ.
-Без пояснений.
-
----
-
-## NEXT
-
-Мягкое продолжение.
-
-Без давления.
-
-Примеры:
-
-* могу подсказать маршрут
-* могу накидать точки рядом
-* могу показать похожую съёмку
-
----
-
-## ЗАПРЕЩЕНО
-
-Никогда не использовать:
-
-* индивидуальный подход
-* сохраняю эмоции
-* важные моменты
-* работаю с душой
-* учту все пожелания
-* качественная съёмка
-
-Если фраза подходит к любому заказу — она плохая.
-
----
-
-## СТИЛЬ
-
-Пиши:
-
-* спокойно
-* коротко
-* по-человечески
-* без пафоса
-
-Не пытайся "улучшать" текст.
-Если можно сказать проще — говори проще.
-
----
-
-## САМОПРОВЕРКА
-
-Перед ответом проверь:
-
-* есть ли все 7 блоков
-* есть ли имя (если было)
-* есть ли конкретика
-* есть ли один нюанс
-* есть ли одна практическая фишка
-* нет ли банальщины
-* не дублируется ли HERO_TITLE и HERO_SUBTITLE
-
-Если нет — перепиши.
-
----
-
-## ГЛАВНОЕ
-
-Это должен быть не "красивый текст".
-
-Это должно выглядеть как:
-
-человек понял ситуацию
-и спокойно объяснил, что делать
-
----
-
-## ПРИМЕР ЛОГИКИ (НЕ КОПИРОВАТЬ)
-
-HERO_TITLE → короткое обращение
-HERO_SUBTITLE → попадание в заказ
-NUANCE → где обычно косяк
-TIP → что делать
-TRUST → короткое наблюдение
-HOOK_KEY → ключ
-NEXT → мягкое продолжение
-
----
-
----USER---
-
-client_name: Маша
-client_label: молодожёны
-event_type: wedding
-event_subtype: other
-date_text: завтра 6
-city:
-location:
-duration_text:
-guest_count_text:
-requirements:
-priority_signals:
-tone_signal: friendly
-
-Верни ответ строго в формате с блоками [HERO_TITLE] [HERO_SUBTITLE] [NUANCE] [TIP] [TRUST] [HOOK_KEY] [NEXT]. Без текста вне блоков.
-
+из которого он собирается.
 """
+
 
 # ── Repair prompt for step 2 validation failure ───────────────────────────
 _REPAIR_PROMPT = """\
@@ -396,31 +551,29 @@ _PHOTO_SET_MAP: dict[str, str] = {
 @dataclass
 class _SemanticDraft:
     """
-    Private intermediate result of step 1.
-    Mirrors the new Step 1 prompt contract exactly:
-      [HERO_TITLE] [HERO_SUBTITLE] [NUANCE] [TIP] [TRUST] [HOOK_KEY] [NEXT]
+    Private intermediate result of Step 1.
     Local to this service only — not a public contract, not persisted.
+
+    Step 1 source of truth (new prompt):
+      - final_text: the only field reliably produced. Primary landing content (MVP).
+
+    Legacy fields (hero_subtitle, work_steps, case_title, case_description, hook_key):
+      - Retained for backward compatibility only.
+      - New Step 1 prompt does NOT generate the old HERO/TIP/TRUST/NEXT blocks.
+      - These fields will be empty in practice and are NOT injected if empty
+        (see _inject_draft guards — Vариант B decision).
+
+    entry_message: intentionally absent — not parsed, not stored, not injected.
     """
-    hero_title: str = ""
+    # Legacy semantic fields — will be empty with new Step 1 prompt.
+    # Kept in struct to avoid breaking any future hybrid prompt scenarios.
     hero_subtitle: str = ""
-    nuance: str = ""
-    tip: str = ""
-    trust: str = ""
+    work_steps: list[str] = field(default_factory=list)
+    case_title: str = ""
+    case_description: str = ""
     hook_key: str = ""
-    next: str = ""
-
-    @property
-    def work_steps(self) -> list[str]:
-        """Ordered mapping to work_block.steps: tip → nuance → trust."""
-        return [self.tip, self.nuance, self.trust]
-
-    @property
-    def case_description(self) -> str:
-        return self.next
-
-    @property
-    def case_title(self) -> str:
-        return ""
+    # Primary landing content — sole output that new Step 1 prompt guarantees.
+    final_text: str = ""
 
 
 class LandingGeneratorService:
@@ -456,7 +609,12 @@ class LandingGeneratorService:
         user_message = (
             self._build_order_context(parsed_order)
             + "\n\n"
-            + "Верни ответ строго в формате с блоками [HERO_TITLE] [HERO_SUBTITLE] [NUANCE] [TIP] [TRUST] [HOOK_KEY] [NEXT]. Без текста вне блоков."
+            + (
+                "Верни ответ строго в двух блоках:\n"
+                "[final_text] — полный готовый отклик для клиента, без разметки внутри.\n"
+                "[entry_message] — короткое сообщение-подводка (2–4 строки).\n"
+                "Никакого текста вне блоков."
+            )
         )
         prompt_text = _SEMANTIC_DRAFT_PROMPT + "\n\n---USER---\n\n" + user_message
 
@@ -500,11 +658,14 @@ class LandingGeneratorService:
         logger.warning("STEP1 RAW OUTPUT:\n%s", text)
         draft = self._parse_semantic_draft(text)
         logger.warning(
-            "Semantic draft parsed | hero_title=%r | hero_subtitle=%r | hook=%r | next=%r",
-            draft.hero_title,
-            draft.hero_subtitle,
-            draft.hook_key,
-            draft.next,
+            "Semantic draft parsed"
+            " | final_text_present=%s | final_text_len=%d"
+            " | hero_subtitle_present=%s | work_steps_count=%d | hook=%r",
+            bool(draft.final_text),
+            len(draft.final_text),
+            bool(draft.hero_subtitle),
+            len(draft.work_steps),
+            draft.hook_key or None,
         )
 
         self._write_trace(
@@ -520,40 +681,71 @@ class LandingGeneratorService:
         return draft
 
     def _parse_semantic_draft(self, text: str) -> _SemanticDraft:
+        """
+        Parse Step 1 AI output into _SemanticDraft.
+
+        New Step 1 prompt format:
+          [final_text]   — primary landing content (required, always present)
+          [entry_message] — intentionally NOT parsed; pipeline ignores it
+
+        Legacy blocks ([HERO_SUBTITLE], [TIP], [NUANCE], [TRUST], [HOOK_KEY], [NEXT])
+        are no longer generated by the new prompt. Parser attempts to read them for
+        hybrid/fallback scenarios but will get empty strings in practice.
+        _inject_draft() guards prevent empty values from entering the model.
+        """
         if not text or not text.strip():
             logger.warning("Semantic draft parser received empty text")
             return _SemanticDraft()
 
+        # ── Primary: parse [final_text] ──────────────────────────────────
+        # Must be extracted before the generic block splitter, because
+        # [final_text] content may contain lines that look like block headers.
+        # entry_message is intentionally skipped — pipeline does not use it.
+        # Lookahead stops at any next [BLOCK] header or end of text — robust
+        # to any extra blocks the model might insert after [final_text].
+        pattern_final_text = r"\[final_text\]\s*(.*?)\s*(?=\n\[|$)"
+        match = re.search(pattern_final_text, text, re.DOTALL | re.IGNORECASE)
+        if match:
+            final_text = match.group(1).strip()
+            logger.warning("Step 1 final_text parsed | len=%d", len(final_text))
+        else:
+            final_text = ""
+            logger.warning("Step 1 [final_text] block not found in output")
+
+        # ── Legacy: parse old semantic blocks (may be absent with new prompt) ─
         pattern = re.compile(r"\[\s*([A-Z_]+)\s*\]", re.IGNORECASE)
         parts = pattern.split(text)
 
         blocks: dict[str, str] = {}
         it = iter(parts[1:])
         for key in it:
-            content = next(it, "").strip()
-            blocks[key.upper()] = content
+            val = next(it, "").strip()
+            blocks[key.upper()] = val
 
-        if not blocks:
-            logger.warning("Semantic draft parser found no blocks in AI output")
-            return _SemanticDraft()
+        detected = list(blocks.keys())
+        if detected:
+            logger.warning("Step 1 detected legacy blocks: %s", detected)
 
-        logger.warning("Semantic draft detected blocks: %s", list(blocks.keys()))
-
+        # Legacy hook_key — only valid if old prompt was used
         hook_key = blocks.get("HOOK_KEY", "").strip().lower()
-        if hook_key:
-            if hook_key in _VALID_HOOK_KEYS:
-                logger.debug("Step 1 hook_key: %s", hook_key)
-            else:
-                logger.warning("Step 1 returned unknown hook_key value: %r", hook_key)
+        if hook_key and hook_key not in _VALID_HOOK_KEYS:
+            logger.warning("Step 1 returned unknown hook_key value: %r — ignoring", hook_key)
+            hook_key = ""
+
+        # Legacy work_steps — only non-empty strings, empty list if absent
+        work_steps = [s for s in [
+            blocks.get("TIP", ""),
+            blocks.get("NUANCE", ""),
+            blocks.get("TRUST", ""),
+        ] if s]
 
         return _SemanticDraft(
-            hero_title=blocks.get("HERO_TITLE", ""),
             hero_subtitle=blocks.get("HERO_SUBTITLE", ""),
-            nuance=blocks.get("NUANCE", ""),
-            tip=blocks.get("TIP", ""),
-            trust=blocks.get("TRUST", ""),
+            work_steps=work_steps,
+            case_title="",
+            case_description=blocks.get("NEXT", ""),
             hook_key=hook_key,
-            next=blocks.get("NEXT", ""),
+            final_text=final_text,
         )
 
     def _generate_landing_json(
@@ -571,7 +763,7 @@ class LandingGeneratorService:
 
         packaging_prompt = self._load_packaging_prompt()
         user_message = self._build_packaging_message(
-            parsed_order, photographer_name, price, photo_set_id, case_series_id, draft
+            parsed_order, photographer_name, price, photo_set_id, case_series_id
         )
         prompt_text = packaging_prompt + "\n\n---USER---\n\n" + user_message
         input_payload = {"user_message": user_message}
@@ -612,7 +804,6 @@ class LandingGeneratorService:
             )
 
         if isinstance(raw.get("hero"), dict):
-            raw["hero"].pop("title", None)
             raw["hero"].pop("subtitle", None)
         elif "hero" not in raw:
             raw["hero"] = {}
@@ -623,6 +814,9 @@ class LandingGeneratorService:
         if isinstance(raw.get("similar_case"), dict):
             raw["similar_case"].pop("description", None)
             raw["similar_case"].pop("title", None)
+
+        # Strip final_text from Step 2 AI output — Step 1 is the sole author.
+        raw.pop("final_text", None)
 
         patched = self._inject_draft(raw, draft)
         cleaned = self._post_process(patched, parsed_order, photo_set_id)
@@ -643,6 +837,10 @@ class LandingGeneratorService:
             logger.warning(
                 "Landing validation failed on first attempt — retrying\n%s", str(exc)
             )
+
+        # Preserve final_text before repair — it comes from Step 1 and must
+        # never be lost or overwritten by the repair AI call.
+        saved_final_text = cleaned.get("final_text")
 
         repair_user = (
             f"Original context:\n{user_message}\n\n"
@@ -673,7 +871,6 @@ class LandingGeneratorService:
             )
 
         if isinstance(raw2.get("hero"), dict):
-            raw2["hero"].pop("title", None)
             raw2["hero"].pop("subtitle", None)
         elif "hero" not in raw2:
             raw2["hero"] = {}
@@ -685,8 +882,15 @@ class LandingGeneratorService:
             raw2["similar_case"].pop("description", None)
             raw2["similar_case"].pop("title", None)
 
+        # Strip final_text from repair AI output — Step 1 is the sole author.
+        raw2.pop("final_text", None)
+
         patched2 = self._inject_draft(raw2, draft)
         cleaned2 = self._post_process(patched2, parsed_order, photo_set_id)
+
+        # Restore final_text after repair — repair AI does not know about it.
+        if saved_final_text is not None:
+            cleaned2["final_text"] = saved_final_text
 
         try:
             model = LandingPageModel.model_validate(cleaned2)
@@ -745,32 +949,56 @@ class LandingGeneratorService:
     def _inject_draft(
         self, raw: dict[str, Any], draft: _SemanticDraft
     ) -> dict[str, Any]:
+        """
+        Merge _SemanticDraft values into Step 2 AI output dict.
+
+        Guards (Variant B decision):
+          - Each legacy field is injected ONLY if non-empty.
+          - No empty strings or empty lists are written into the model.
+          - New Step 1 prompt does not produce legacy blocks, so in practice
+            hero_subtitle / work_steps / case_* will be empty and skipped.
+          - final_text is always injected if present (primary content, MVP).
+        """
         result = dict(raw)
 
-        if not isinstance(result.get("hero"), dict):
-            result["hero"] = {}
-        # Overwrite AI-generated hero fields with Step 1 content — both title and subtitle
-        result["hero"]["title"] = draft.hero_title
-        result["hero"]["subtitle"] = draft.hero_subtitle
+        # ── hero.subtitle — inject only if non-empty ─────────────────────
+        if draft.hero_subtitle:
+            if not isinstance(result.get("hero"), dict):
+                result["hero"] = {}
+            result["hero"]["subtitle"] = draft.hero_subtitle
 
-        if not isinstance(result.get("work_block"), dict):
-            result["work_block"] = {}
-        result["work_block"]["steps"] = list(draft.work_steps)
+        # ── work_block.steps — inject only if there are non-empty steps ──
+        if draft.work_steps:
+            if not isinstance(result.get("work_block"), dict):
+                result["work_block"] = {}
+            result["work_block"]["steps"] = list(draft.work_steps)
 
-        if draft.case_description:
-            existing_similar_case = result.get("similar_case")
-            if not isinstance(existing_similar_case, dict):
-                existing_similar_case = {}
-            existing_similar_case["description"] = draft.case_description
+        # ── similar_case — inject only if description or title is non-empty
+        if draft.case_description or draft.case_title:
+            existing = result.get("similar_case")
+            if not isinstance(existing, dict):
+                existing = {}
+            if draft.case_description:
+                existing["description"] = draft.case_description
             if draft.case_title:
-                existing_similar_case["title"] = draft.case_title
-            result["similar_case"] = existing_similar_case
+                existing["title"] = draft.case_title
+            result["similar_case"] = existing
+
+        # ── final_text — primary landing content from Step 1 ─────────────
+        # Step 1 is the sole author. Step 2 AI output is stripped before this.
+        if draft.final_text is not None:
+            result["final_text"] = draft.final_text
 
         logger.warning(
-            "Inject summary | hero.title=%r | hero.subtitle=%r | work_block.steps=%r",
-            result.get("hero", {}).get("title"),
-            result.get("hero", {}).get("subtitle"),
-            result.get("work_block", {}).get("steps"),
+            "Inject summary"
+            " | hero.subtitle=%r"
+            " | work_block.steps_count=%d"
+            " | similar_case.description=%r"
+            " | final_text_len=%d",
+            result.get("hero", {}).get("subtitle") if isinstance(result.get("hero"), dict) else None,
+            len(result.get("work_block", {}).get("steps") or []) if isinstance(result.get("work_block"), dict) else 0,
+            result.get("similar_case", {}).get("description") if isinstance(result.get("similar_case"), dict) else None,
+            len(result.get("final_text") or ""),
         )
 
         return result
@@ -798,46 +1026,29 @@ class LandingGeneratorService:
         price: str | None,
         photo_set_id: str | None,
         case_series_id: str | None,
-        draft: "_SemanticDraft | None" = None,
     ) -> str:
-        """
-        Build Step 2 user message.
-        Semantic draft fields (from Step 1) are the primary content block.
-        Order context fields are structural hints for slug/template/price selection.
-        """
-        proposed_price = price or (f"до {o.budget_max} руб." if o.budget_max else "не указана")
-
-        lines = []
-
-        # Semantic draft block — Step 2 prompt maps these fields directly into JSON
-        if draft is not None:
-            lines += [
-                f"hero_title: {draft.hero_title}",
-                f"hero_subtitle: {draft.hero_subtitle}",
-                f"nuance: {draft.nuance}",
-                f"tip: {draft.tip}",
-                f"trust: {draft.trust}",
-                f"hook_key: {draft.hook_key}",
-                f"next: {draft.next}",
-            ]
-
-        # Structural context — for slug, template, price, photo set
-        lines += [
-            f"proposed_price: {proposed_price}",
-            f"photographer_name: {photographer_name}",
+        proposed_price = price or (f"до {o.budget_max} ₽" if o.budget_max else "не указана")
+        lines = [
+            f"client_label: {o.client_label or o.client_name or 'клиент'}",
             f"event_type: {o.event_type or ''}",
             f"event_subtype: {o.event_subtype or ''}",
             f"date_text: {o.date_text or ''}",
             f"event_date: {o.event_date.isoformat() if o.event_date else ''}",
             f"city: {o.city or ''}",
-            f"client_label: {o.client_label or o.client_name or 'клиент'}",
+            f"location: {o.location or ''}",
+            f"duration_text: {o.duration_text or ''}",
+            f"guest_count_text: {o.guest_count_text or ''}",
+            f"budget_max: {o.budget_max or ''}",
+            f"requirements: {', '.join(o.requirements) if o.requirements else ''}",
+            f"priority_signals: {', '.join(o.priority_signals) if o.priority_signals else ''}",
+            f"photographer_name: {photographer_name}",
+            f"proposed_price: {proposed_price}",
         ]
         if photo_set_id:
             lines.append(f"preferred_photo_set_id: {photo_set_id}")
         if case_series_id:
             lines.append(f"preferred_case_series_id: {case_series_id}")
         return "\n".join(lines)
-
 
     def _post_process(
         self,

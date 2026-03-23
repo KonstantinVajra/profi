@@ -71,6 +71,10 @@ export interface LandingPageModel {
   reviews: ReviewItem[];
   secondary_actions: string[];
   personal_block?: PersonalBlock | null;
+  // Primary landing content (MVP). Populated from Step 1 AI output only.
+  // Render this as main content block if present; fall back to legacy blocks if absent.
+  // Architectural rule: final_text = primary content (MVP); semantic blocks = secondary / legacy.
+  final_text?: string;
 }
 
 export interface LandingPageMeta {

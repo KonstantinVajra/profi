@@ -121,3 +121,9 @@ hero.title:
 — только JSON
 — без текста
 — без комментариев
+
+## ЗАПРЕТ
+
+НЕ генерировать поле "final_text".
+Это поле заполняется из Step 1 и не должно присутствовать в твоём выводе.
+Do NOT generate "final_text" field. It is populated from Step 1.

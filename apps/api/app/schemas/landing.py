@@ -100,6 +100,10 @@ class LandingPageModel(BaseModel):
     reviews: list[ReviewItem] = []
     secondary_actions: list[str] = []
     personal_block: Optional[PersonalBlock] = None
+    # Primary landing content (MVP). Populated from Step 1 AI output only.
+    # Semantic blocks (work_block, similar_case, etc.) are secondary / legacy.
+    # AI must never generate HTML in this field.
+    final_text: Optional[str] = None
 
     @field_validator("quick_questions")
     @classmethod
