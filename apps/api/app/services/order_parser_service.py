@@ -404,7 +404,7 @@ class OrderParserService:
             raise ValueError("AI could not extract order fields from the provided screenshots.")
 
         raw_ai_output = _json.dumps(raw_dict, ensure_ascii=False)
-        cleaned = self._clean(raw_dict)
+        cleaned = self._post_process(raw_dict)
 
         try:
             parsed = ParsedOrder.model_validate(cleaned)
