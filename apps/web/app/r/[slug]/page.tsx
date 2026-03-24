@@ -20,6 +20,7 @@
 
 import { notFound } from "next/navigation";
 import type { LandingPublicResponse } from "@/types/landing";
+import type { ContactInfo } from "@/lib/api";
 import {
   Hero,
   Badges,
@@ -52,6 +53,21 @@ async function getLanding(slug: string): Promise<LandingPublicResponse | null> {
   }
 }
 
+// Fetch project contact_info for CTA button links.
+// Contacts live in Project domain, not in Landing contract.
+// Returns null on any failure — CtaButtons renders nothing without contacts.
+async function getContactInfo(projectId: string): Promise<ContactInfo | null> {
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+  try {
+    const res = await fetch(`${apiUrl}/projects/${projectId}`, { cache: "no-store" });
+    if (!res.ok) return null;
+    const project = await res.json();
+    return (project.contact_info as ContactInfo) ?? null;
+  } catch {
+    return null;
+  }
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────
 
 export default async function LandingPage({
@@ -64,6 +80,8 @@ export default async function LandingPage({
   if (!data) return notFound();
 
   const c = data.landing_content;
+  // contacts live in Project, fetched separately from landing contract
+  const contactInfo = await getContactInfo(data.landing_page.project_id);
 
   // MVP mode: final_text is the primary body copy.
   // Layout: OrderHeader → final_text → photo block → contacts.
@@ -84,7 +102,7 @@ export default async function LandingPage({
 
           <StyleGrid grid={c.style_grid} />
 
-          <CtaButtons cta={c.cta} />
+          <CtaButtons cta={c.cta} contactInfo={contactInfo} />
 
         </div>
       </div>
@@ -115,7 +133,7 @@ export default async function LandingPage({
 
       <QuickQuestions questions={c.quick_questions} />
 
-      <CtaButtons cta={c.cta} />
+      <CtaButtons cta={c.cta} contactInfo={contactInfo} />
 
     </main>
   );

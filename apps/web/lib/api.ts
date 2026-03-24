@@ -23,6 +23,26 @@ export const createProject = (title?: string) =>
     body: JSON.stringify({ title }),
   });
 
+// ── Contacts (shared type, mirrors backend ContactInfo schema) ───────────
+// telegram / instagram stored without @ (backend validator strips it).
+export interface ContactInfo {
+  whatsapp?: string | null;
+  telegram?: string | null;
+  phone?: string | null;
+  instagram?: string | null;
+  vk?: string | null;
+}
+
+// ── Projects (extended) ──────────────────────────────────────────────────
+export const getProject = (projectId: string) =>
+  request<{ id: string; contact_info?: ContactInfo | null }>(`/projects/${projectId}`);
+
+export const updateProjectContacts = (projectId: string, contactInfo: ContactInfo) =>
+  request<{ contact_info?: ContactInfo | null }>(`/projects/${projectId}/contacts`, {
+    method: "PATCH",
+    body: JSON.stringify({ contact_info: contactInfo }),
+  });
+
 // ── Orders ────────────────────────────────────────────────────────────────
 export const extractOrder = (projectId: string, rawText: string) =>
   request("/orders/extract", {

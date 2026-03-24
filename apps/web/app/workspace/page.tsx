@@ -5,6 +5,7 @@ import {
   createProject,
   extractOrder,
   extractOrderFromImage,
+  updateProjectContacts,
   generateLanding,
   generateReplies,
   suggestDialogueReply,
@@ -13,6 +14,7 @@ import {
   createPresetAlbum,
 } from "@/lib/api";
 import type { PhotoSet } from "@/types/photo";
+import type { ContactInfo } from "@/lib/api";
 import { selectExtractionMethod, validateScreenshotFile } from "@/lib/extractionUtils";
 
 // ── Types ─────────────────────────────────────────────────────────────────
@@ -78,6 +80,27 @@ export default function WorkspacePage() {
 
   // screenshot state — for order extraction via image
   const [screenshotFile, setScreenshotFile] = useState<File | null>(null);
+
+  // contacts state — photographer contact links for CTA buttons
+  const [contacts, setContacts] = useState<ContactInfo>({});
+  const [contactsSaved, setContactsSaved] = useState(false);
+  const [contactsSaving, setContactsSaving] = useState(false);
+
+  // ── Contacts ─────────────────────────────────────────────────────────────
+
+  async function handleSaveContacts() {
+    if (!projectId) return;
+    setContactsSaving(true);
+    setError(null);
+    try {
+      await updateProjectContacts(projectId, contacts);
+      setContactsSaved(true);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to save contacts");
+    } finally {
+      setContactsSaving(false);
+    }
+  }
 
   async function copyToClipboard(text: string, id: string) {
     try {
@@ -403,6 +426,48 @@ ${landingUrl}`, "landing-entry")}
             </section>
           );
         })()}
+
+        {/* Block Contacts — photographer links for CTA buttons on landing */}
+        {projectId && (
+          <section className="bg-white rounded-2xl p-6 shadow-sm">
+            <h2 className="text-base font-semibold mb-4">Контакты для лендинга</h2>
+            <div className="space-y-3">
+              {(["whatsapp", "telegram", "phone", "instagram", "vk"] as const).map((key) => {
+                const labels: Record<string, string> = {
+                  whatsapp:  "WhatsApp (номер, напр. 79161234567)",
+                  telegram:  "Telegram (username без @)",
+                  phone:     "Телефон",
+                  instagram: "Instagram (username без @)",
+                  vk:        "VK (username или id)",
+                };
+                return (
+                  <div key={key}>
+                    <label className="text-xs text-gray-400 block mb-1">{labels[key]}</label>
+                    <input
+                      type="text"
+                      className="w-full border rounded-xl px-3 py-2 text-sm"
+                      value={contacts[key] ?? ""}
+                      onChange={(e) => {
+                        setContacts((prev) => ({ ...prev, [key]: e.target.value || null }));
+                        setContactsSaved(false);
+                      }}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+            <button
+              onClick={handleSaveContacts}
+              disabled={contactsSaving}
+              className="mt-4 bg-black text-white rounded-xl px-5 py-2 text-sm disabled:opacity-40"
+            >
+              {contactsSaving ? "Сохраняем..." : "Сохранить контакты"}
+            </button>
+            {contactsSaved && (
+              <p className="text-xs text-green-600 mt-2">✓ Сохранено</p>
+            )}
+          </section>
+        )}
 
         {/* Block D — Reply Variants */}
         {replies.length > 0 && (

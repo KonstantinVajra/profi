@@ -40,6 +40,12 @@ class Project(Base):
     status: Mapped[str] = mapped_column(String(50), default="draft")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
+    # Photographer contact links. Keys: whatsapp, telegram, phone, instagram, vk.
+    # Values: str | None — flat dict, no nested structures.
+    # NULL = contacts not yet configured (all existing rows start as NULL).
+    contact_info: Mapped[Optional[dict[str, Optional[str]]]] = mapped_column(
+        JSON, nullable=True
+    )
 
     # relationships
     order_inputs: Mapped[list["OrderInput"]] = relationship(
