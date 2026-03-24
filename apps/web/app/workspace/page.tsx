@@ -9,7 +9,6 @@ import {
   updateProjectContacts,
   generateLanding,
   generateReplies,
-  suggestDialogueReply,
   getPhotoSets,
   uploadPhotos,
   createPresetAlbum,
@@ -43,13 +42,6 @@ interface LandingData {
   };
 }
 
-interface SuggestionData {
-  detected_intent: string;
-  detected_stage: string;
-  suggestions: Array<{ type: string; text: string }>;
-  next_best_question: string;
-}
-
 // ── Component ─────────────────────────────────────────────────────────────
 
 export default function WorkspacePage() {
@@ -71,8 +63,9 @@ export default function WorkspacePage() {
   const [parsedOrder, setParsedOrder] = useState<ParsedOrderData | null>(null);
   const [landing, setLanding] = useState<LandingData | null>(null);
   const [replies, setReplies] = useState<ReplyVariantData[]>([]);
-  const [clientMsg, setClientMsg] = useState("");
-  const [suggestion, setSuggestion] = useState<SuggestionData | null>(null);
+  // Local editable drafts keyed by ReplyVariant id.
+  // Initialized from message_text on generation; never persisted to backend.
+  const [draftTexts, setDraftTexts] = useState<Record<string, string>>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // photo state
@@ -209,7 +202,7 @@ export default function WorkspacePage() {
     setParsedOrder(null);
     setLanding(null);
     setReplies([]);
-    setSuggestion(null);
+    setDraftTexts({});
 
     try {
       // 1. reuse existing project or create one if this is the first action
@@ -237,26 +230,16 @@ export default function WorkspacePage() {
       const landingUrl = `${siteUrl}/r/${slug}`;
       const repliesResult = await generateReplies(pid, landingUrl) as { reply_variants: ReplyVariantData[] };
       setReplies(repliesResult.reply_variants);
+      setDraftTexts(
+        repliesResult.reply_variants.reduce<Record<string, string>>(
+          (acc, r) => ({ ...acc, [r.id]: r.message_text }),
+          {}
+        )
+      );
 
       // reset screenshot after successful generation
       setScreenshotFile(null);
 
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Unknown error");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  // ── Step 5: dialogue ─────────────────────────────────────────────────────
-
-  async function handleDialogue() {
-    if (!projectId || !clientMsg.trim()) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await suggestDialogueReply(projectId, clientMsg) as SuggestionData;
-      setSuggestion(result);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Unknown error");
     } finally {
@@ -512,7 +495,6 @@ ${landingUrl}`, "landing-entry")}
           </section>
         )}
 
-        {/* Block D — Reply Variants */}
         {replies.length > 0 && (
           <section className="bg-white rounded-2xl p-6 shadow-sm">
             <h2 className="text-base font-semibold mb-3">Варианты отклика</h2>
@@ -522,65 +504,25 @@ ${landingUrl}`, "landing-entry")}
                   <div className="flex justify-between items-center mb-2">
                     <span className="text-xs font-medium uppercase text-gray-400">{r.variant_type}</span>
                     <button
-                      onClick={() => copyToClipboard(r.message_text, r.id)}
+                      onClick={() => copyToClipboard(draftTexts[r.id] ?? "", r.id)}
                       className="text-xs text-gray-400 hover:text-black"
                     >
                       {copiedId === r.id ? "✓ Скопировано" : "Копировать"}
                     </button>
                   </div>
-                  <p className="text-sm whitespace-pre-wrap">{r.message_text}</p>
+                  <textarea
+                    className="w-full text-sm bg-transparent outline-none resize-none min-h-[7rem] overflow-auto"
+                    value={draftTexts[r.id] ?? ""}
+                    onChange={(e) =>
+                      setDraftTexts((prev) => ({ ...prev, [r.id]: e.target.value }))
+                    }
+                  />
                 </div>
               ))}
             </div>
           </section>
         )}
 
-        {/* Block E — Dialogue Copilot */}
-        {projectId && (
-          <section className="bg-white rounded-2xl p-6 shadow-sm">
-            <h2 className="text-base font-semibold mb-3">Диалог с клиентом</h2>
-            <textarea
-              className="w-full border rounded-xl p-3 text-sm resize-none h-20"
-              placeholder="Вставьте ответ клиента..."
-              value={clientMsg}
-              onChange={(e) => setClientMsg(e.target.value)}
-            />
-            <button
-              onClick={handleDialogue}
-              disabled={loading || !clientMsg.trim()}
-              className="mt-3 bg-black text-white rounded-xl px-5 py-2 text-sm disabled:opacity-40"
-            >
-              {loading ? "Анализируем..." : "Предложить ответ"}
-            </button>
-
-            {suggestion && (
-              <div className="mt-4 space-y-3">
-                <div className="text-xs text-gray-400">
-                  <span className="font-medium text-gray-600">Интент:</span> {suggestion.detected_intent}
-                  {" · "}
-                  <span className="font-medium text-gray-600">Стадия:</span> {suggestion.detected_stage}
-                </div>
-                {suggestion.suggestions.map((s, i) => (
-                  <div key={i} className="border rounded-xl p-3">
-                    <div className="flex justify-between items-center mb-1">
-                      <span className="text-xs font-medium uppercase text-gray-400">{s.type}</span>
-                      <button
-                        onClick={() => copyToClipboard(s.text, `suggestion-${i}`)}
-                        className="text-xs text-gray-400 hover:text-black"
-                      >
-                        {copiedId === `suggestion-${i}` ? "✓ Скопировано" : "Копировать"}
-                      </button>
-                    </div>
-                    <p className="text-sm">{s.text}</p>
-                  </div>
-                ))}
-                <p className="text-xs text-gray-500">
-                  <span className="font-medium">Следующий вопрос:</span> {suggestion.next_best_question}
-                </p>
-              </div>
-            )}
-          </section>
-        )}
 
       </div>
     </main>
