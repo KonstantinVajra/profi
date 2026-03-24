@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import {
   createProject,
+  getProject,
   extractOrder,
   extractOrderFromImage,
   updateProjectContacts,
@@ -55,6 +56,12 @@ export default function WorkspacePage() {
   const [siteUrl, setSiteUrl] = useState("http://localhost:3000");
   useEffect(() => { setSiteUrl(window.location.origin); }, []);
 
+  // localStorage key for project lifecycle persistence
+  const LS_KEY = "landingReply_projectId";
+
+  // true while we are checking localStorage on mount — hides Contacts block briefly
+  const [projectLoading, setProjectLoading] = useState(true);
+
   // state
   const [orderText, setOrderText] = useState("");
   const [loading, setLoading] = useState(false);
@@ -86,14 +93,51 @@ export default function WorkspacePage() {
   const [contactsSaved, setContactsSaved] = useState(false);
   const [contactsSaving, setContactsSaving] = useState(false);
 
+  // ── Project lifecycle ────────────────────────────────────────────────────
+  // On mount: restore projectId from localStorage and preload contact_info.
+  // Project is NOT created here — only restored if it already exists in DB.
+  useEffect(() => {
+    const stored = localStorage.getItem(LS_KEY);
+    if (!stored) {
+      setProjectLoading(false);
+      return;
+    }
+    (getProject(stored) as Promise<{ id: string; contact_info?: ContactInfo | null }>)
+      .then((project) => {
+        setProjectId(project.id);
+        if (project.contact_info) {
+          setContacts(project.contact_info);
+        }
+      })
+      .catch(() => {
+        // Project not found or network error — clear stale id, start fresh.
+        localStorage.removeItem(LS_KEY);
+      })
+      .finally(() => {
+        setProjectLoading(false);
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Get existing projectId or create a new project on first meaningful action.
+  // Both handleSaveContacts and handleGenerate call this — only one project per session.
+  async function ensureProject(): Promise<string> {
+    if (projectId) return projectId;
+    const project = await createProject() as { id: string };
+    localStorage.setItem(LS_KEY, project.id);
+    setProjectId(project.id);
+    return project.id;
+  }
+
   // ── Contacts ─────────────────────────────────────────────────────────────
 
   async function handleSaveContacts() {
-    if (!projectId) return;
     setContactsSaving(true);
     setError(null);
     try {
-      await updateProjectContacts(projectId, contacts);
+      // Create project on first save if not yet created.
+      const pid = await ensureProject();
+      await updateProjectContacts(pid, contacts);
       setContactsSaved(true);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to save contacts");
@@ -168,31 +212,30 @@ export default function WorkspacePage() {
     setSuggestion(null);
 
     try {
-      // 1. create project
-      const project = await createProject() as { id: string };
-      setProjectId(project.id);
+      // 1. reuse existing project or create one if this is the first action
+      const pid = await ensureProject();
 
       // 2. extract order — method determined by selectExtractionMethod
       const parsed = (
         extractionMethod === "text"
-          ? await extractOrder(project.id, orderText)
-          : await extractOrderFromImage(project.id, screenshotFile!)
+          ? await extractOrder(pid, orderText)
+          : await extractOrderFromImage(pid, screenshotFile!)
       ) as ParsedOrderData;
       setParsedOrder(parsed);
 
       // 3. generate landing — resolve photo set
       let resolvedPhotoSetId: string | undefined = selectedPhotoSetId ?? undefined;
       if (!resolvedPhotoSetId && manualFiles.length > 0) {
-        const uploadResult = await uploadPhotos(project.id, manualFiles);
+        const uploadResult = await uploadPhotos(pid, manualFiles);
         resolvedPhotoSetId = uploadResult.photo_set_id;
       }
-      const landingResult = await generateLanding(project.id, resolvedPhotoSetId) as LandingData;
+      const landingResult = await generateLanding(pid, resolvedPhotoSetId) as LandingData;
       setLanding(landingResult);
 
       // 4. generate replies with real landing URL
       const slug = landingResult.landing_page.slug;
       const landingUrl = `${siteUrl}/r/${slug}`;
-      const repliesResult = await generateReplies(project.id, landingUrl) as { reply_variants: ReplyVariantData[] };
+      const repliesResult = await generateReplies(pid, landingUrl) as { reply_variants: ReplyVariantData[] };
       setReplies(repliesResult.reply_variants);
 
       // reset screenshot after successful generation
@@ -364,7 +407,7 @@ export default function WorkspacePage() {
           </div>
           <button
             onClick={handleGenerate}
-            disabled={loading || (!orderText.trim() && !screenshotFile)}
+            disabled={projectLoading || loading || (!orderText.trim() && !screenshotFile)}
             className="mt-3 bg-black text-white rounded-xl px-5 py-2 text-sm disabled:opacity-40"
           >
             {loading ? "Генерируем..." : "Сгенерировать"}
@@ -427,8 +470,8 @@ ${landingUrl}`, "landing-entry")}
           );
         })()}
 
-        {/* Block Contacts — photographer links for CTA buttons on landing */}
-        {projectId && (
+        {/* Block Contacts — visible from page load; project created lazily on first save */}
+        {!projectLoading && (
           <section className="bg-white rounded-2xl p-6 shadow-sm">
             <h2 className="text-base font-semibold mb-4">Контакты для лендинга</h2>
             <div className="space-y-3">
@@ -458,7 +501,7 @@ ${landingUrl}`, "landing-entry")}
             </div>
             <button
               onClick={handleSaveContacts}
-              disabled={contactsSaving}
+              disabled={projectLoading || contactsSaving}
               className="mt-4 bg-black text-white rounded-xl px-5 py-2 text-sm disabled:opacity-40"
             >
               {contactsSaving ? "Сохраняем..." : "Сохранить контакты"}
