@@ -551,7 +551,7 @@ _TEMPLATE_MAP: dict[str, str] = {
     "family":    "family_session",
     "event":     "event_general",
     "portrait":  "family_session",
-    "other":     "registry_small",
+    "other":     "event_general",
 }
 
 _PHOTO_SET_MAP: dict[str, str] = {
@@ -1097,7 +1097,7 @@ class LandingGeneratorService:
 
         if not result.get("template_key"):
             event_type = (parsed_order.event_type or "other").lower()
-            result["template_key"] = _TEMPLATE_MAP.get(event_type, "registry_small")
+            result["template_key"] = _TEMPLATE_MAP.get(event_type, "event_general")
 
         if not isinstance(result.get("style_grid"), dict):
             result["style_grid"] = {}
