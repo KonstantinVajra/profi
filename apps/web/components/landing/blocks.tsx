@@ -386,6 +386,39 @@ const CHANNEL_ICONS: Record<string, string> = { telegram: TELEGRAM_SVG, whatsapp
 // there appear first. Remaining configured channels follow in CHANNEL_ORDER.
 const CHANNEL_ORDER = ["telegram", "whatsapp", "phone", "instagram", "vk"] as const;
 
+// Normalize a raw contact value into a valid href for the given channel.
+// Handles usernames, partial URLs (vk.com/x, t.me/x), and full URLs equally.
+// Called after the empty-value guard — value is always a non-empty trimmed string here.
+function normalizeContactHref(channel: string, value: string): string {
+  switch (channel) {
+    case "telegram": {
+      const v = value.startsWith("@") ? value.slice(1) : value;
+      if (v.startsWith("https://") || v.startsWith("http://")) return v;
+      if (v.startsWith("telegram.me/")) return `https://${v}`;
+      if (v.startsWith("t.me/"))        return `https://${v}`;
+      return `https://t.me/${v}`;
+    }
+    case "vk": {
+      if (value.startsWith("https://") || value.startsWith("http://")) return value;
+      if (value.startsWith("vk.com/")) return `https://${value}`;
+      return `https://vk.com/${value}`;
+    }
+    case "instagram": {
+      if (value.startsWith("https://") || value.startsWith("http://")) return value;
+      if (value.startsWith("instagram.com/")) return `https://${value}`;
+      return `https://instagram.com/${value}`;
+    }
+    case "whatsapp": {
+      const digits = value.replace(/\D/g, "");
+      return `https://wa.me/${digits}`;
+    }
+    case "phone":
+      return `tel:${value}`;
+    default:
+      return value;
+  }
+}
+
 export function CtaButtons({
   cta,
   contactInfo,
@@ -404,15 +437,15 @@ export function CtaButtons({
   const remaining  = CHANNEL_ORDER.filter((ch) => !aiChannels.includes(ch));
   const orderedChannels = [...aiChannels, ...remaining];
 
-  // Resolve active buttons: channel must have a known URL builder AND a non-empty contact value.
+  // Resolve active buttons: channel must be known AND have a non-empty contact value.
+  // href is built via normalizeContactHref — handles full URLs, partial URLs, and plain usernames.
   const activeButtons = orderedChannels.flatMap((ch) => {
-    const buildUrl = CONTACT_URLS[ch];
-    if (!buildUrl) return []; // unknown channel — ignore
+    if (!CONTACT_URLS[ch]) return []; // unknown channel — ignore
     const value = contactInfo[ch as keyof ContactInfo]?.trim();
     if (!value) return []; // no contact value configured for this channel
     return [{
       channel: ch,
-      href:    buildUrl(value),
+      href:    normalizeContactHref(ch, value),
       label:   CHANNEL_LABELS[ch] ?? ch,
       style:   CHANNEL_STYLES[ch] ?? "bg-gray-900 text-white",
       icon:    CHANNEL_ICONS[ch] ?? null,
