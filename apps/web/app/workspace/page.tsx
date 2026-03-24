@@ -6,6 +6,7 @@ import {
   getProject,
   extractOrder,
   extractOrderFromImage,
+  extractOrderFromImages,
   updateProjectContacts,
   generateLanding,
   generateReplies,
@@ -15,7 +16,7 @@ import {
 } from "@/lib/api";
 import type { PhotoSet } from "@/types/photo";
 import type { ContactInfo } from "@/lib/api";
-import { selectExtractionMethod, validateScreenshotFile } from "@/lib/extractionUtils";
+import { selectExtractionMethod } from "@/lib/extractionUtils";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -78,8 +79,8 @@ export default function WorkspacePage() {
   const [newAlbumFiles, setNewAlbumFiles] = useState<File[]>([]);
   const [albumCreating, setAlbumCreating] = useState(false);
 
-  // screenshot state — for order extraction via image
-  const [screenshotFile, setScreenshotFile] = useState<File | null>(null);
+  // screenshot state — for order extraction via image (1–5 files)
+  const [screenshotFiles, setScreenshotFiles] = useState<File[]>([]);
 
   // contacts state — photographer contact links for CTA buttons
   const [contacts, setContacts] = useState<ContactInfo>({});
@@ -195,7 +196,7 @@ export default function WorkspacePage() {
 
   async function handleGenerate() {
     // text has priority over screenshot; at least one must be present
-    const extractionMethod = selectExtractionMethod(orderText, screenshotFile);
+    const extractionMethod = selectExtractionMethod(orderText, screenshotFiles.length > 0 ? screenshotFiles[0] : null);
     if (!extractionMethod) return;
     setLoading(true);
     setError(null);
@@ -208,11 +209,13 @@ export default function WorkspacePage() {
       // 1. reuse existing project or create one if this is the first action
       const pid = await ensureProject();
 
-      // 2. extract order — method determined by selectExtractionMethod
+      // 2. extract order — single file uses /extract/image, multiple uses /extract/images
       const parsed = (
         extractionMethod === "text"
           ? await extractOrder(pid, orderText)
-          : await extractOrderFromImage(pid, screenshotFile!)
+          : screenshotFiles.length === 1
+            ? await extractOrderFromImage(pid, screenshotFiles[0])
+            : await extractOrderFromImages(pid, screenshotFiles)
       ) as ParsedOrderData;
       setParsedOrder(parsed);
 
@@ -237,8 +240,8 @@ export default function WorkspacePage() {
         )
       );
 
-      // reset screenshot after successful generation
-      setScreenshotFile(null);
+      // reset screenshots after successful generation
+      setScreenshotFiles([]);
 
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Unknown error");
@@ -360,37 +363,36 @@ export default function WorkspacePage() {
             value={orderText}
             onChange={(e) => {
               setOrderText(e.target.value);
-              // clear screenshot when user types text to avoid ambiguous state
+              // clear screenshots when user types text to avoid ambiguous state
               if (e.target.value.trim()) {
-                setScreenshotFile(null);
+                setScreenshotFiles([]);
               }
             }}
           />
           <div className="mt-3">
-            <p className="text-xs text-gray-400 mb-1">или загрузите скриншот заказа:</p>
+            <p className="text-xs text-gray-400 mb-1">или загрузите скриншот(ы) заказа (до 5):</p>
             <input
               type="file"
               accept="image/*"
+              multiple
               className="text-sm"
               onChange={(e) => {
-                const file = e.target.files?.[0] ?? null;
-                if (file) {
-                  const validationError = validateScreenshotFile(file);
-                  if (validationError) {
-                    setError(validationError);
-                    return;
-                  }
+                const files = Array.from(e.target.files ?? []);
+                if (files.length > 5) {
+                  setError("Можно загрузить не более 5 скриншотов");
+                  e.target.value = "";
+                  return;
                 }
-                setScreenshotFile(file);
+                setScreenshotFiles(files);
               }}
             />
-            {screenshotFile && (
-              <p className="text-xs text-gray-500 mt-1">{screenshotFile.name}</p>
+            {screenshotFiles.length > 0 && (
+              <p className="text-xs text-gray-500 mt-1">{screenshotFiles.length} файл(ов) выбрано</p>
             )}
           </div>
           <button
             onClick={handleGenerate}
-            disabled={projectLoading || loading || (!orderText.trim() && !screenshotFile)}
+            disabled={projectLoading || loading || (!orderText.trim() && screenshotFiles.length === 0)}
             className="mt-3 bg-black text-white rounded-xl px-5 py-2 text-sm disabled:opacity-40"
           >
             {loading ? "Генерируем..." : "Сгенерировать"}

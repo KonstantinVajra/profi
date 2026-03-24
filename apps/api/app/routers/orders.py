@@ -185,3 +185,108 @@ async def extract_order_from_image(
         order_input_id=record.order_input_id,
         **parsed.model_dump(),
     )
+
+
+@router.post(
+    "/extract/images",
+    response_model=ParsedOrderResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Extract structured order fields from multiple screenshots (vision mode)",
+)
+async def extract_order_from_images(
+    project_id: str = Form(...),
+    screenshots: list[UploadFile] = File(...),
+    db=Depends(get_db),
+):
+    """
+    Accept 1–5 screenshots of a client order and extract structured fields using AI vision.
+    All images are sent to the AI in a single call; the model synthesises them into one ParsedOrder.
+
+    MVP limitation: screenshot_path in OrderInput stores only the first file path.
+    Remaining files are used for AI extraction only and are not persisted individually.
+
+    Returns the same ParsedOrderResponse as POST /orders/extract and /orders/extract/image.
+    """
+    repo = OrderRepository(db)
+
+    # 1. validate project exists
+    repo.get_project(project_id)
+
+    # 2. count validation
+    if len(screenshots) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one screenshot is required.",
+        )
+    if len(screenshots) > 5:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Too many screenshots: maximum 5 allowed, got {len(screenshots)}.",
+        )
+
+    # 3. validate MIME types and read bytes for all files
+    image_list: list[tuple[bytes, str]] = []
+    for upload in screenshots:
+        media_type = upload.content_type or "image/jpeg"
+        if media_type not in _ALLOWED_IMAGE_TYPES:
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail=f"Unsupported image type: {media_type}. Allowed: {sorted(_ALLOWED_IMAGE_TYPES)}",
+            )
+        img_bytes = await upload.read()
+        if not img_bytes:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="One of the uploaded files is empty.",
+            )
+        image_list.append((img_bytes, media_type))
+
+    # 4. persist first screenshot to storage; remaining files used for AI only.
+    #    MVP limitation: screenshot_path stores only the first file path.
+    import uuid as _uuid_mod
+    transient_id = str(_uuid_mod.uuid4())
+    first_bytes, first_media_type = image_list[0]
+    ext = _IMAGE_EXT.get(first_media_type, "jpg")
+    storage_key = f"orders/{transient_id}/screenshot.{ext}"
+    dest = _ORDERS_STORAGE_ROOT / storage_key
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(first_bytes)
+
+    # 5. save OrderInput with first screenshot path
+    order_input = repo.create_order_input(
+        project_id=project_id,
+        raw_text=None,
+        screenshot_path=storage_key,
+        source_type="screenshot",
+    )
+
+    # 6. AI vision extraction across all screenshots in one call
+    try:
+        parsed = order_parser_service.parse_images(
+            image_list=image_list,
+            project_id=project_id,
+            db=db,
+        )
+    except ValueError as exc:
+        logger.error(
+            "Multi-screenshot parsing failed | project=%s | error=%s", project_id, exc
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        )
+
+    # 7. save parsed order to DB
+    record = repo.create_parsed_order(
+        project_id=project_id,
+        order_input_id=order_input.id,
+        parsed=parsed,
+    )
+
+    # 8. return same response shape as single-image extraction
+    return ParsedOrderResponse(
+        id=record.id,
+        project_id=record.project_id,
+        order_input_id=record.order_input_id,
+        **parsed.model_dump(),
+    )

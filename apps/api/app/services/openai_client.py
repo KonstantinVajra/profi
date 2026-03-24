@@ -205,6 +205,84 @@ class OpenAIClient:
             logger.error("Failed to parse vision response as JSON: %s", raw[:300])
             raise ValueError(f"OpenAI vision returned non-JSON response: {raw[:200]}") from exc
 
+    def extract_json_with_images(
+        self,
+        system_prompt: str,
+        image_list: list[tuple[bytes, str]],
+        temperature: float = 0.1,
+        max_tokens: int = 1000,
+    ) -> dict[str, Any]:
+        """
+        Send a system prompt and multiple images to the model and parse the response as JSON.
+        Used for multi-screenshot order extraction (vision mode).
+
+        Each (bytes, media_type) pair is sent as a separate image_url block in the user
+        message content. OpenAI processes all images together in a single AI call.
+
+        Args:
+            system_prompt:  instructions telling the model what to extract
+            image_list:     list of (image_bytes, media_type) tuples; max 5 enforced by caller
+            temperature:    0.1 default — extraction should be deterministic
+            max_tokens:     budget for the response
+
+        Returns:
+            Parsed JSON dict.
+
+        Raises:
+            ValueError: if image_list is empty, or response cannot be parsed as JSON.
+            openai.APIError: on network / auth failures (let caller handle).
+        """
+        import base64
+
+        if not image_list:
+            raise ValueError("image_list must not be empty")
+
+        logger.debug(
+            "OpenAI multi-image vision request | model=%s | count=%d",
+            self._model, len(image_list),
+        )
+
+        # Build content: one image_url block per screenshot, then the extraction prompt.
+        content: list[dict[str, Any]] = []
+        for img_bytes, media_type in image_list:
+            b64 = base64.b64encode(img_bytes).decode("utf-8")
+            data_url = f"data:{media_type};base64,{b64}"
+            content.append({"type": "image_url", "image_url": {"url": data_url}})
+        content.append({
+            "type": "text",
+            "text": "Extract order fields from these screenshots. Return ONLY valid JSON.",
+        })
+
+        response: ChatCompletion = self._client.chat.completions.create(
+            model=self._model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": content},
+            ],
+        )
+
+        raw = response.choices[0].message.content or ""
+        logger.debug(
+            "OpenAI multi-image vision response | tokens=%d | raw_len=%d",
+            response.usage.total_tokens if response.usage else 0, len(raw),
+        )
+
+        stripped = raw.strip()
+        if stripped.startswith("```"):
+            lines = stripped.splitlines()
+            stripped = "\n".join(
+                line for line in lines
+                if not line.strip().startswith("```")
+            ).strip()
+
+        try:
+            return json.loads(stripped)
+        except json.JSONDecodeError as exc:
+            logger.error("Failed to parse multi-image vision response as JSON: %s", raw[:300])
+            raise ValueError(f"OpenAI vision returned non-JSON response: {raw[:200]}") from exc
+
 
 # Module-level singleton — imported by services
 openai_client = OpenAIClient()

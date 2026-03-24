@@ -332,6 +332,105 @@ class OrderParserService:
 
         return result
 
+    def parse_images(
+        self,
+        image_list: list[tuple[bytes, str]],
+        project_id: str | None = None,
+        db=None,
+    ) -> ParsedOrder:
+        """
+        Extract structured order fields from multiple screenshots using OpenAI vision mode.
+
+        All images are sent in a single AI call. The model is expected to synthesise
+        information across all provided screenshots into one ParsedOrder.
+
+        Args:
+            image_list:   list of (image_bytes, media_type) tuples; 1–5 items
+            project_id:   optional — if provided along with db, trace is written
+            db:           optional SQLAlchemy session for trace persistence
+
+        Returns:
+            Validated ParsedOrder instance.
+
+        Raises:
+            ValueError: if image_list is empty, AI response is unreadable, or validation fails.
+        """
+        import json as _json
+
+        if not image_list:
+            raise ValueError("image_list must not be empty")
+
+        logger.info(
+            "Parsing order from %d screenshot(s) | sizes=%s",
+            len(image_list),
+            [len(b) for b, _ in image_list],
+        )
+
+        prompt_text = self._system_prompt + "\n\n[input: multi-screenshot]"
+        input_payload = {
+            "input_type": "multi-screenshot",
+            "count": len(image_list),
+            "media_types": [mt for _, mt in image_list],
+        }
+
+        try:
+            raw_dict = openai_client.extract_json_with_images(
+                system_prompt=self._system_prompt,
+                image_list=image_list,
+                temperature=0.1,
+                max_tokens=800,
+            )
+        except Exception as exc:
+            logger.error("OpenAI multi-image vision call failed: %s", exc)
+            self._write_trace(
+                project_id=project_id,
+                db=db,
+                input_payload=input_payload,
+                prompt_text=prompt_text,
+                raw_ai_output=None,
+                parsed_output=None,
+            )
+            raise ValueError(f"AI vision call failed: {exc}") from exc
+
+        if not raw_dict:
+            self._write_trace(
+                project_id=project_id,
+                db=db,
+                input_payload=input_payload,
+                prompt_text=prompt_text,
+                raw_ai_output="{}",
+                parsed_output=None,
+            )
+            raise ValueError("AI could not extract order fields from the provided screenshots.")
+
+        raw_ai_output = _json.dumps(raw_dict, ensure_ascii=False)
+        cleaned = self._clean(raw_dict)
+
+        try:
+            parsed = ParsedOrder.model_validate(cleaned)
+        except Exception as exc:
+            logger.error("ParsedOrder validation failed (multi-image): %s", exc)
+            self._write_trace(
+                project_id=project_id,
+                db=db,
+                input_payload=input_payload,
+                prompt_text=prompt_text,
+                raw_ai_output=raw_ai_output,
+                parsed_output=None,
+            )
+            raise ValueError(f"Parsed order validation failed: {exc}") from exc
+
+        self._write_trace(
+            project_id=project_id,
+            db=db,
+            input_payload=input_payload,
+            prompt_text=prompt_text,
+            raw_ai_output=raw_ai_output,
+            parsed_output=_json.dumps(parsed.model_dump(mode="json"), ensure_ascii=False),
+        )
+
+        return parsed
+
 
 # Module-level singleton — imported by the orders router
 order_parser_service = OrderParserService()

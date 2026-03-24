@@ -67,6 +67,22 @@ export const extractOrderFromImage = (projectId: string, file: File) => {
   });
 };
 
+// Multi-screenshot variant: sends 1–5 files to POST /orders/extract/images.
+// Backend enforces the 5-file limit; frontend validates before calling.
+export const extractOrderFromImages = (projectId: string, files: File[]) => {
+  const form = new FormData();
+  form.append("project_id", projectId);
+  files.forEach((f) => form.append("screenshots", f));
+  const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+  return fetch(`${BASE}/orders/extract/images`, {
+    method: "POST",
+    body: form,
+  }).then((res) => {
+    if (!res.ok) throw new Error(`Multi-screenshot extraction failed: ${res.status}`);
+    return res.json();
+  });
+};
+
 // ── Replies ───────────────────────────────────────────────────────────────
 export const generateReplies = (projectId: string, landingUrl?: string) =>
   request(`/projects/${projectId}/replies/generate`, {
