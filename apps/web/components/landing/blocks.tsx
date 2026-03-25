@@ -369,12 +369,14 @@ const CHANNEL_LABELS: Record<string, string> = {
   vk:        "ВКонтакте",
 };
 
+const BASE_BUTTON_STYLE = "bg-white/70 backdrop-blur-sm border border-white/60 text-gray-900 hover:bg-white/90";
+
 const CHANNEL_STYLES: Record<string, string> = {
-  telegram:  "bg-gray-900 hover:bg-gray-800 text-white",
-  whatsapp:  "bg-green-600/70 hover:bg-green-600/80 text-white",
-  phone:     "bg-amber-900 hover:bg-amber-800 text-white",
-  instagram: "bg-gray-900 hover:bg-gray-800 text-white",
-  vk:        "bg-blue-600/70 hover:bg-blue-600/80 text-white",
+  telegram:  BASE_BUTTON_STYLE,
+  whatsapp:  BASE_BUTTON_STYLE,
+  phone:     BASE_BUTTON_STYLE,
+  instagram: BASE_BUTTON_STYLE,
+  vk:        BASE_BUTTON_STYLE,
 };
 
 const TELEGRAM_SVG  = "M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221l-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.871 4.326-2.962-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.833.941z";
@@ -383,10 +385,13 @@ const INSTAGRAM_SVG = "M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691
 const VK_SVG        = "M15.684 0H8.316C1.592 0 0 1.592 0 8.316v7.368C0 22.408 1.592 24 8.316 24h7.368C22.408 24 24 22.408 24 15.684V8.316C24 1.592 22.408 0 15.684 0zm3.692 17.123h-1.744c-.66 0-.864-.525-2.05-1.727-1.033-1-1.49-1.135-1.744-1.135-.356 0-.458.102-.458.593v1.575c0 .424-.135.678-1.253.678-1.846 0-3.896-1.118-5.335-3.202C4.624 10.857 4.03 8.57 4.03 8.096c0-.254.102-.491.593-.491h1.744c.44 0 .61.203.779.677.863 2.49 2.303 4.675 2.896 4.675.22 0 .322-.102.322-.66V9.721c-.068-1.186-.695-1.287-.695-1.71 0-.203.17-.407.44-.407h2.743c.372 0 .508.203.508.643v3.473c0 .372.17.508.271.508.22 0 .407-.136.813-.542 1.253-1.405 2.151-3.574 2.151-3.574.119-.254.322-.491.763-.491h1.744c.525 0 .644.27.525.643-.22 1.017-2.354 4.031-2.354 4.031-.186.305-.254.44 0 .78.186.254.796.779 1.202 1.253.745.847 1.32 1.558 1.473 2.05.17.487-.085.735-.576.735z";
 const PHONE_SVG     = "M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z";
 
-// Icon accent colours — only for channels where we want a tinted icon on dark bg.
+// Icon accent colours — colour is the sole visual differentiator per channel.
 const CHANNEL_ICON_CLASS: Record<string, string> = {
-  telegram:  "text-sky-400",
-  instagram: "text-rose-400",
+  telegram:  "text-sky-500",
+  whatsapp:  "text-green-500",
+  instagram: "text-rose-500",
+  vk:        "text-blue-500",
+  phone:     "text-amber-700",
 };
 
 const CHANNEL_ICONS: Record<string, string> = {
@@ -463,9 +468,9 @@ export function CtaButtons({
       channel: ch,
       href:    normalizeContactHref(ch, value),
       label:   CHANNEL_LABELS[ch] ?? ch,
-      style:   CHANNEL_STYLES[ch] ?? "bg-gray-900 text-white",
+      style:   CHANNEL_STYLES[ch] ?? BASE_BUTTON_STYLE,
       icon:    CHANNEL_ICONS[ch] ?? null,
-      iconClassName: CHANNEL_ICON_CLASS[ch] ?? "text-white",
+      iconClassName: CHANNEL_ICON_CLASS[ch] ?? "text-gray-500",
     }];
   });
 
