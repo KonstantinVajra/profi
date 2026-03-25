@@ -369,7 +369,7 @@ const CHANNEL_LABELS: Record<string, string> = {
   vk:        "ВКонтакте",
 };
 
-const BASE_BUTTON_STYLE = "bg-white/70 backdrop-blur-sm border border-white/60 text-gray-900 hover:bg-white/90";
+const BASE_BUTTON_STYLE = "bg-stone-100 border border-stone-200 text-gray-900 hover:bg-stone-200";
 
 const CHANNEL_STYLES: Record<string, string> = {
   telegram:  BASE_BUTTON_STYLE,
