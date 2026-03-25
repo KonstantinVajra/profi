@@ -76,6 +76,7 @@ export default function WorkspacePage() {
   const [photoSetsLoaded, setPhotoSetsLoaded] = useState(false);
   // preset album creation
   const [newAlbumName, setNewAlbumName] = useState("");
+  const [newAlbumCategory, setNewAlbumCategory] = useState("");
   const [newAlbumFiles, setNewAlbumFiles] = useState<File[]>([]);
   const [albumCreating, setAlbumCreating] = useState(false);
 
@@ -177,11 +178,12 @@ export default function WorkspacePage() {
   }
 
   async function handleCreateAlbum() {
-    if (!newAlbumName.trim() || newAlbumFiles.length === 0) return;
+    if (!newAlbumName.trim() || newAlbumFiles.length === 0 || !newAlbumCategory) return;
     setAlbumCreating(true);
     try {
-      await createPresetAlbum(newAlbumName.trim(), newAlbumFiles);
+      await createPresetAlbum(newAlbumName.trim(), newAlbumFiles, newAlbumCategory);
       setNewAlbumName("");
+      setNewAlbumCategory("");
       setNewAlbumFiles([]);
       setPhotoSetsLoaded(false);
       await loadPhotoSets();
@@ -336,6 +338,25 @@ export default function WorkspacePage() {
                 onChange={(e) => setNewAlbumName(e.target.value)}
                 className="w-full border rounded-lg px-3 py-1.5 text-sm"
               />
+              <select
+                value={newAlbumCategory}
+                onChange={(e) => setNewAlbumCategory(e.target.value)}
+                className="w-full border rounded-lg px-3 py-1.5 text-sm"
+              >
+                <option value="">Выберите категорию</option>
+                <option value="wedding">wedding</option>
+                <option value="love_story">love_story</option>
+                <option value="family">family</option>
+                <option value="kids">kids</option>
+                <option value="portrait">portrait</option>
+                <option value="maternity">maternity</option>
+                <option value="business">business</option>
+                <option value="events">events</option>
+                <option value="catalog">catalog</option>
+                <option value="interior">interior</option>
+                <option value="food">food</option>
+                <option value="art">art</option>
+              </select>
               <input
                 type="file"
                 multiple
@@ -345,7 +366,7 @@ export default function WorkspacePage() {
               />
               <button
                 onClick={handleCreateAlbum}
-                disabled={albumCreating || !newAlbumName.trim() || newAlbumFiles.length === 0}
+                disabled={albumCreating || !newAlbumName.trim() || newAlbumFiles.length === 0 || !newAlbumCategory}
                 className="bg-gray-800 text-white rounded-lg px-4 py-1.5 text-sm disabled:opacity-40"
               >
                 {albumCreating ? "Сохраняем..." : "Создать альбом"}
