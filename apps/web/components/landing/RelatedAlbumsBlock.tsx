@@ -59,7 +59,7 @@ export function RelatedAlbumsBlock({ categoryKey }: { categoryKey: string }) {
         type="button"
         onClick={handleOpen}
         disabled={loading}
-        className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-100 px-4 py-1.5 text-sm text-amber-900 hover:bg-amber-200 transition-colors disabled:opacity-50"
+        className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-4 py-1.5 text-sm text-amber-900 hover:bg-amber-100 transition-colors disabled:opacity-50"
       >
         {loading ? "Загрузка..." : "Посмотреть похожие съёмки"}
         {listVisible ? (

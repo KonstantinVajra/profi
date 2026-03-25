@@ -371,10 +371,10 @@ const CHANNEL_LABELS: Record<string, string> = {
 
 const CHANNEL_STYLES: Record<string, string> = {
   telegram:  "bg-gray-900 hover:bg-gray-800 text-white",
-  whatsapp:  "bg-green-800 hover:bg-green-700 text-white",
+  whatsapp:  "bg-green-600/70 hover:bg-green-600/80 text-white",
   phone:     "bg-amber-900 hover:bg-amber-800 text-white",
   instagram: "bg-gray-900 hover:bg-gray-800 text-white",
-  vk:        "bg-blue-800 hover:bg-blue-700 text-white",
+  vk:        "bg-blue-600/70 hover:bg-blue-600/80 text-white",
 };
 
 const TELEGRAM_SVG  = "M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221l-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.871 4.326-2.962-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.833.941z";
