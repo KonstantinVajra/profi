@@ -1,26 +1,37 @@
 "use client";
 
-const SHARE_SVG = "M13 9V3H11v6H7l5 5 5-5h-4zm-8 9h14v-2H5v2z";
-
 // Simple upload/share arrow — unambiguous "share" metaphor,
 // does not conflict with channel icons in the same CTA row.
 const SHARE_ICON_SVG = "M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8M16 6l-4-4-4 4M12 2v13";
 
 async function handleShare() {
-  try {
-    if (typeof navigator !== "undefined" && navigator.share) {
-      await navigator.share({ title: document.title, url: window.location.href });
-    } else {
-      await navigator.clipboard.writeText(window.location.href);
-      alert("Ссылка скопирована");
-    }
-  } catch (err) {
-    // AbortError — user dismissed native share dialog; ignore silently.
-    if (err instanceof Error && err.name !== "AbortError") {
-      await navigator.clipboard.writeText(window.location.href);
-      alert("Ссылка скопирована");
+  const url = window.location.href;
+
+  // 1. Native share — best experience on mobile and modern desktop.
+  if (typeof navigator !== "undefined" && navigator.share) {
+    try {
+      await navigator.share({ title: document.title, url });
+      return; // success — nothing else needed
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") {
+        // User dismissed the native share sheet — not an error, do nothing.
+        return;
+      }
+      // share threw something else — fall through to clipboard
     }
   }
+
+  // 2. Clipboard — works on HTTPS and localhost.
+  try {
+    await navigator.clipboard.writeText(url);
+    alert("Ссылка скопирована");
+    return;
+  } catch {
+    // clipboard unavailable (HTTP, permissions denied) — fall through to prompt
+  }
+
+  // 3. Final fallback — always works, lets the user copy manually.
+  window.prompt("Скопируйте ссылку:", url);
 }
 
 export function SharePageButton() {
