@@ -16,6 +16,7 @@ import type {
   PersonalBlock,
 } from "@/types/landing";
 import { StyleGridClient } from "@/components/landing/StyleGridClient";
+import { SharePageButton } from "@/components/landing/SharePageButton";
 import type { ContactInfo } from "@/lib/api";
 
 // ── Hero ──────────────────────────────────────────────────────────────────
@@ -484,6 +485,7 @@ export function CtaButtons({
       <p className="text-[15px] font-semibold text-gray-900 text-center mb-5">
         Напишите мне
       </p>
+      <SharePageButton />
       {activeButtons.map(({ channel, href, label, style, icon, iconClassName }) => (
         <a
           key={channel}
