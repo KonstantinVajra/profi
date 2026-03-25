@@ -33,6 +33,7 @@ class PhotoSet(Base):
     source_type: Mapped[str] = mapped_column(
         String(50), nullable=False
     )  # preset | manual_upload | landing_snapshot
+    category_key: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
     items: Mapped[list["PhotoSetItem"]] = relationship(

@@ -7,5 +7,11 @@ export interface PhotoSetItem {
 export interface PhotoSet {
   id: string;
   name: string | null;
+  category_key: string | null;
   items: PhotoSetItem[];
+}
+
+export interface PresetAlbumSummary {
+  id: string;
+  name: string | null;
 }

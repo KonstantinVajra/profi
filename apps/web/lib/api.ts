@@ -127,9 +127,10 @@ export const uploadPhotos = (projectId: string, files: File[]) => {
   });
 };
 
-export const createPresetAlbum = (name: string, files: File[]) => {
+export const createPresetAlbum = (name: string, files: File[], category: string) => {
   const form = new FormData();
   form.append("name", name);
+  form.append("category", category);
   files.forEach((f) => form.append("files", f));
   const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
   return fetch(`${BASE}/photo-sets/preset`, {
@@ -140,3 +141,6 @@ export const createPresetAlbum = (name: string, files: File[]) => {
     return res.json() as Promise<{ photo_set_id: string; name: string }>;
   });
 };
+
+export const getPresetAlbumsByCategory = (category: string) =>
+  request(`/public/photo-sets?category=${encodeURIComponent(category)}`);

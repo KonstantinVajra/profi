@@ -5,9 +5,25 @@ photo_url is computed in the router/serving layer from storage_key.
 storage_key never appears in public responses.
 """
 
-from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel
+
+
+# Canonical preset category keys
+PRESET_CATEGORIES: list[str] = [
+    "wedding",
+    "love_story",
+    "family",
+    "kids",
+    "portrait",
+    "maternity",
+    "business",
+    "events",
+    "catalog",
+    "interior",
+    "food",
+    "art",
+]
 
 
 class PhotoSetItemResponse(BaseModel):
@@ -22,6 +38,7 @@ class PhotoSetItemResponse(BaseModel):
 class PhotoSetResponse(BaseModel):
     id: str
     name: Optional[str]
+    category_key: Optional[str] = None
     items: list[PhotoSetItemResponse] = []
 
     class Config:
@@ -37,3 +54,12 @@ class PresetCreateResponse(BaseModel):
     """Returned after preset album creation."""
     photo_set_id: str
     name: str
+
+
+class PresetAlbumSummary(BaseModel):
+    """Lightweight preset album summary for category listings."""
+    id: str
+    name: Optional[str]
+
+    class Config:
+        from_attributes = True

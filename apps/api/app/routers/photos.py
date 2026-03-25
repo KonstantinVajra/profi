@@ -4,21 +4,22 @@ Photos router
 Workspace endpoints (authenticated zone in future — open for MVP):
   GET  /photo-sets                           — list preset albums
   GET  /photo-sets/{photo_set_id}            — one preset album with items
-  POST /photo-sets/preset                    — create preset album (name + files)
+  POST /photo-sets/preset                    — create preset album (name + category + files)
   POST /projects/{project_id}/photos/upload  — manual upload → photo_set_id
 
 Public serving endpoint:
   GET  /photos/{item_id}                     — serve photo bytes (public, no auth)
 
-Public read path for landing render:
-  GET  /public/photo-sets/{photo_set_id}     — items for landing_snapshot only
-  (registered in public_landings router)
+Public read paths for landing render:
+  GET  /public/photo-sets?category={key}     — list preset albums by category
+  GET  /public/photo-sets/{photo_set_id}     — items for landing_snapshot or preset
 """
 
 import logging
 from pathlib import Path
+from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -28,7 +29,9 @@ from app.schemas.photo import (
     PhotoSetItemResponse,
     PhotoSetResponse,
     PhotoUploadResponse,
+    PresetAlbumSummary,
     PresetCreateResponse,
+    PRESET_CATEGORIES,
 )
 from app.services.landing_photo_service import STORAGE_ROOT, _photo_url
 
@@ -59,17 +62,19 @@ def _save_upload(file: UploadFile, dest: Path) -> None:
     response_model=list[PhotoSetResponse],
     summary="List preset photo albums",
 )
-def list_photo_sets(db: Session = Depends(get_db)):
-    sets = (
-        db.query(PhotoSet)
-        .filter(PhotoSet.source_type == "preset")
-        .order_by(PhotoSet.created_at.desc())
-        .all()
-    )
+def list_photo_sets(
+    category: Optional[str] = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    q = db.query(PhotoSet).filter(PhotoSet.source_type == "preset")
+    if category:
+        q = q.filter(PhotoSet.category_key == category)
+    sets = q.order_by(PhotoSet.created_at.desc()).all()
     return [
         PhotoSetResponse(
             id=s.id,
             name=s.name,
+            category_key=s.category_key,
             items=[_item_to_response(i) for i in s.items],
         )
         for s in sets
@@ -91,6 +96,7 @@ def get_photo_set(photo_set_id: str, db: Session = Depends(get_db)):
     return PhotoSetResponse(
         id=ps.id,
         name=ps.name,
+        category_key=ps.category_key,
         items=[_item_to_response(i) for i in ps.items],
     )
 
@@ -103,10 +109,16 @@ def get_photo_set(photo_set_id: str, db: Session = Depends(get_db)):
 )
 def create_preset_album(
     name: str = Form(...),
+    category: str = Form(...),
     files: list[UploadFile] = File(...),
     db: Session = Depends(get_db),
 ):
-    ps = PhotoSet(source_type="preset", name=name)
+    if category not in PRESET_CATEGORIES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid category_key '{category}'. Allowed: {PRESET_CATEGORIES}",
+        )
+    ps = PhotoSet(source_type="preset", name=name, category_key=category)
     db.add(ps)
     db.flush()
 
@@ -132,7 +144,7 @@ def create_preset_album(
 
     db.add_all(items)
     db.commit()
-    logger.info("Preset album created | id=%s | name=%s | items=%d", ps.id, name, len(items))
+    logger.info("Preset album created | id=%s | name=%s | category=%s | items=%d", ps.id, name, category, len(items))
     return PresetCreateResponse(photo_set_id=ps.id, name=name)
 
 
@@ -209,26 +221,54 @@ def serve_photo(item_id: str, db: Session = Depends(get_db)):
     return FileResponse(str(file_path))
 
 
-# ── public photo-set read (for landing render) ────────────────────────────
+# ── public photo-set endpoints (for landing render) ───────────────────────
+
+@router.get(
+    "/public/photo-sets",
+    response_model=list[PresetAlbumSummary],
+    summary="List preset albums by category (public, for landing page render)",
+)
+def list_public_photo_sets_by_category(
+    category: str = Query(...),
+    db: Session = Depends(get_db),
+):
+    if category not in PRESET_CATEGORIES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid category_key '{category}'. Allowed: {PRESET_CATEGORIES}",
+        )
+    sets = (
+        db.query(PhotoSet)
+        .filter(
+            PhotoSet.source_type == "preset",
+            PhotoSet.category_key == category,
+        )
+        .order_by(PhotoSet.created_at.desc())
+        .all()
+    )
+    return [
+        PresetAlbumSummary(id=s.id, name=s.name)
+        for s in sets
+    ]
+
 
 @router.get(
     "/public/photo-sets/{photo_set_id}",
     response_model=PhotoSetResponse,
-    summary="Get photo items for a landing snapshot (public, for landing page render)",
+    summary="Get photo items for a landing snapshot or preset album (public)",
 )
 def get_public_photo_set(photo_set_id: str, request: Request, db: Session = Depends(get_db)):
     """
-    Returns items only for source_type=landing_snapshot.
-    preset and manual_upload are not accessible via this endpoint.
-    Used by the public /r/[slug] page to render style_grid.
-    photo_url is built from the incoming request base URL so it resolves
-    correctly for the external client regardless of server env config.
+    Returns items for source_type=landing_snapshot OR source_type=preset.
+    manual_upload is never publicly accessible.
+    Used by the public /r/[slug] page to render style_grid and related albums.
+    photo_url is built from the incoming request base URL.
     """
     ps = (
         db.query(PhotoSet)
         .filter(
             PhotoSet.id == photo_set_id,
-            PhotoSet.source_type == "landing_snapshot",
+            PhotoSet.source_type.in_(["landing_snapshot", "preset"]),
         )
         .first()
     )
@@ -245,6 +285,7 @@ def get_public_photo_set(photo_set_id: str, request: Request, db: Session = Depe
     return PhotoSetResponse(
         id=ps.id,
         name=ps.name,
+        category_key=ps.category_key,
         items=[
             PhotoSetItemResponse(
                 id=item.id,
