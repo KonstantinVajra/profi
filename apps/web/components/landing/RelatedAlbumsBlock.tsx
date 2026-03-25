@@ -59,9 +59,9 @@ export function RelatedAlbumsBlock({ categoryKey }: { categoryKey: string }) {
         type="button"
         onClick={handleOpen}
         disabled={loading}
-        className="inline-flex items-center gap-1.5 rounded-full border border-gray-300 px-4 py-1.5 text-sm text-gray-600 hover:border-gray-400 hover:text-gray-800 transition-colors disabled:opacity-50"
+        className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-4 py-1.5 text-sm text-amber-900 hover:bg-amber-100 transition-colors disabled:opacity-50"
       >
-        {loading ? "Загрузка..." : "Похожие фотосерии"}
+        {loading ? "Загрузка..." : "Посмотреть похожие съёмки"}
         {listVisible ? (
           <span className="text-xs">↑</span>
         ) : (
