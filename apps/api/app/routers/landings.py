@@ -91,6 +91,7 @@ def generate_landing(
             price=body.price,
             photo_set_id=body.photo_set_id,
             case_series_id=body.case_series_id,
+            related_block=body.related_block.model_dump() if body.related_block else None,
             project_id=project_id,
             db=db,
         )

@@ -36,6 +36,7 @@ import {
   FinalTextBlock,
   OrderHeader,
 } from "@/components/landing/blocks";
+import { RelatedAlbumsBlock } from "@/components/landing/RelatedAlbumsBlock";
 
 // ── Data fetching ─────────────────────────────────────────────────────────
 
@@ -102,6 +103,10 @@ export default async function LandingPage({
 
           <StyleGrid grid={c.style_grid} />
 
+          {c.related_block && (
+            <RelatedAlbumsBlock categoryKey={c.related_block.category_key} />
+          )}
+
           <CtaButtons cta={c.cta} contactInfo={contactInfo} />
 
         </div>
@@ -120,6 +125,10 @@ export default async function LandingPage({
       {c.badges && <Badges badges={c.badges} />}
 
       <StyleGrid grid={c.style_grid} />
+
+      {c.related_block && (
+        <RelatedAlbumsBlock categoryKey={c.related_block.category_key} />
+      )}
 
       {c.similar_case && <SimilarCaseBlock similarCase={c.similar_case} />}
 

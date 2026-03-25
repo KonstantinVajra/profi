@@ -609,6 +609,7 @@ class LandingGeneratorService:
         price: str | None = None,
         photo_set_id: str | None = None,
         case_series_id: str | None = None,
+        related_block: dict | None = None,
         project_id: str | None = None,
         db=None,
     ) -> LandingPageModel:
@@ -616,6 +617,7 @@ class LandingGeneratorService:
         draft = self._generate_semantic_draft(parsed_order, project_id=project_id, db=db)
         return self._generate_landing_json(
             parsed_order, draft, photographer_name, price, photo_set_id, case_series_id,
+            related_block=related_block,
             project_id=project_id, db=db,
         )
 
@@ -782,6 +784,7 @@ class LandingGeneratorService:
         price: str | None,
         photo_set_id: str | None,
         case_series_id: str | None,
+        related_block: dict | None = None,
         project_id: str | None = None,
         db=None,
     ) -> LandingPageModel:
@@ -844,9 +847,15 @@ class LandingGeneratorService:
         # Strip final_text and entry_message from Step 2 AI output — Step 1 is the sole author.
         raw.pop("final_text", None)
         raw.pop("entry_message", None)
+        # AI must never generate related_block — injected from user input only.
+        raw.pop("related_block", None)
 
         patched = self._inject_draft(raw, draft)
         cleaned = self._post_process(patched, parsed_order, photo_set_id)
+
+        # Inject related_block from user input — never from AI output.
+        if related_block is not None:
+            cleaned["related_block"] = related_block
 
         try:
             model = LandingPageModel.model_validate(cleaned)
@@ -868,6 +877,8 @@ class LandingGeneratorService:
         # Preserve final_text before repair — it comes from Step 1 and must
         # never be lost or overwritten by the repair AI call.
         saved_final_text = cleaned.get("final_text")
+        # Preserve related_block before repair — user input, must never be overwritten.
+        saved_related_block = cleaned.get("related_block")
 
         repair_user = (
             f"Original context:\n{user_message}\n\n"
@@ -912,6 +923,8 @@ class LandingGeneratorService:
         # Strip final_text and entry_message from repair AI output — Step 1 is the sole author.
         raw2.pop("final_text", None)
         raw2.pop("entry_message", None)
+        # AI must never generate related_block — injected from user input only.
+        raw2.pop("related_block", None)
 
         patched2 = self._inject_draft(raw2, draft)
         cleaned2 = self._post_process(patched2, parsed_order, photo_set_id)
@@ -919,6 +932,10 @@ class LandingGeneratorService:
         # Restore final_text after repair — repair AI does not know about it.
         if saved_final_text is not None:
             cleaned2["final_text"] = saved_final_text
+
+        # Restore related_block after repair — user input, repair AI must not affect it.
+        if saved_related_block is not None:
+            cleaned2["related_block"] = saved_related_block
 
         try:
             model = LandingPageModel.model_validate(cleaned2)

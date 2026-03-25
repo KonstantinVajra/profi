@@ -54,6 +54,10 @@ export interface PersonalBlock {
   hook_line: string;
 }
 
+export interface RelatedBlock {
+  category_key: string;
+}
+
 export interface LandingPageModel {
   slug: string;
   template_key: string;
@@ -77,6 +81,9 @@ export interface LandingPageModel {
   final_text?: string;
   // Short messenger hook from Step 1. Used in workspace entry block.
   entry_message?: string;
+  // Optional related photo series block. category_key filter only — no embedded data.
+  // AI never generates this — injected from user input only.
+  related_block?: RelatedBlock;
 }
 
 export interface LandingPageMeta {

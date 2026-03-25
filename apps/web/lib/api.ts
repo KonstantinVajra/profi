@@ -91,10 +91,17 @@ export const generateReplies = (projectId: string, landingUrl?: string) =>
   });
 
 // ── Landing ───────────────────────────────────────────────────────────────
-export const generateLanding = (projectId: string, photoSetId?: string) =>
+export const generateLanding = (
+  projectId: string,
+  photoSetId?: string,
+  relatedBlock?: { category_key: string },
+) =>
   request(`/projects/${projectId}/landing/generate`, {
     method: "POST",
-    body: JSON.stringify({ photo_set_id: photoSetId ?? null }),
+    body: JSON.stringify({
+      photo_set_id: photoSetId ?? null,
+      related_block: relatedBlock ?? null,
+    }),
   });
 
 export const getLandingBySlug = (slug: string) =>

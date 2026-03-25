@@ -7,7 +7,8 @@ LandingGenerateResponse — API response shape
 """
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
+from app.schemas.photo import PRESET_CATEGORIES
 
 
 # ── LandingPageModel sub-blocks ───────────────────────────────────────────
@@ -76,6 +77,20 @@ class PersonalBlock(BaseModel):
 
 # ── LandingPageModel — full contract ─────────────────────────────────────
 
+class RelatedBlock(BaseModel):
+    """Optional related photo series block. Stores filter only — no embedded data."""
+    category_key: str
+
+    @model_validator(mode="after")
+    def validate_category_key(self) -> "RelatedBlock":
+        if self.category_key not in PRESET_CATEGORIES:
+            raise ValueError(
+                f"related_block.category_key '{self.category_key}' is not valid. "
+                f"Allowed: {PRESET_CATEGORIES}"
+            )
+        return self
+
+
 class LandingPageModel(BaseModel):
     """
     JSON model for a micro landing page.
@@ -107,6 +122,9 @@ class LandingPageModel(BaseModel):
     # Short messenger hook (2–4 lines) from Step 1. Sent to client before landing link.
     # AI must never generate HTML in this field.
     entry_message: Optional[str] = None
+    # Optional related photo series block. Stores category_key filter only.
+    # AI must never generate this field — injected from user input only.
+    related_block: Optional[RelatedBlock] = None
 
     @field_validator("quick_questions")
     @classmethod
@@ -132,6 +150,7 @@ class LandingGenerateRequest(BaseModel):
     photo_set_id: Optional[str] = None      # override photo set selection
     case_series_id: Optional[str] = None    # override similar case
     review_ids: list[str] = []              # review IDs to include
+    related_block: Optional[RelatedBlock] = None  # optional related photo series filter
 
 
 class LandingPageMetadata(BaseModel):

@@ -72,6 +72,7 @@ export default function WorkspacePage() {
   // photo state
   const [photoSets, setPhotoSets] = useState<PhotoSet[]>([]);
   const [selectedPhotoSetId, setSelectedPhotoSetId] = useState<string | null>(null);
+  const [relatedCategoryKey, setRelatedCategoryKey] = useState("");
   const [manualFiles, setManualFiles] = useState<File[]>([]);
   const [photoSetsLoaded, setPhotoSetsLoaded] = useState(false);
   // preset album creation
@@ -227,7 +228,11 @@ export default function WorkspacePage() {
         const uploadResult = await uploadPhotos(pid, manualFiles);
         resolvedPhotoSetId = uploadResult.photo_set_id;
       }
-      const landingResult = await generateLanding(pid, resolvedPhotoSetId) as LandingData;
+      const landingResult = await generateLanding(
+        pid,
+        resolvedPhotoSetId,
+        relatedCategoryKey ? { category_key: relatedCategoryKey } : undefined,
+      ) as LandingData;
       setLanding(landingResult);
 
       // 4. generate replies with real landing URL
@@ -244,6 +249,7 @@ export default function WorkspacePage() {
 
       // reset screenshots after successful generation
       setScreenshotFiles([]);
+      setRelatedCategoryKey("");
 
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Unknown error");
@@ -308,6 +314,30 @@ export default function WorkspacePage() {
                 </label>
               </div>
             )}
+
+            {/* Related photo series category */}
+            <div className="mt-3">
+              <p className="text-xs text-gray-400 mb-1">Похожие фотосерии (категория):</p>
+              <select
+                value={relatedCategoryKey}
+                onChange={(e) => setRelatedCategoryKey(e.target.value)}
+                className="w-full border rounded-lg px-3 py-1.5 text-sm"
+              >
+                <option value="">— без похожих серий —</option>
+                <option value="wedding">wedding</option>
+                <option value="love_story">love_story</option>
+                <option value="family">family</option>
+                <option value="kids">kids</option>
+                <option value="portrait">portrait</option>
+                <option value="maternity">maternity</option>
+                <option value="business">business</option>
+                <option value="events">events</option>
+                <option value="catalog">catalog</option>
+                <option value="interior">interior</option>
+                <option value="food">food</option>
+                <option value="art">art</option>
+              </select>
+            </div>
           </div>
 
           {/* Manual upload */}
