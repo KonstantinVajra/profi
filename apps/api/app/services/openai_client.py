@@ -84,7 +84,6 @@ class OpenAIClient:
         user_message: str,
         temperature: float = 0.7,
         max_tokens: int = 1000,
-        model: str | None = None,   # per-call override; falls back to self._model
     ) -> str:
         """
         Send a prompt pair to the model and return the raw text response.
@@ -105,10 +104,10 @@ class OpenAIClient:
         Raises:
             openai.APIError: on network / auth failures (let caller handle).
         """
-        logger.debug("OpenAI text request | model=%s | user_len=%d", model or self._model, len(user_message))
+        logger.debug("OpenAI text request | model=%s | user_len=%d", self._model, len(user_message))
 
         response: ChatCompletion = self._client.chat.completions.create(
-            model=model or self._model,
+            model=self._model,
             temperature=temperature,
             max_tokens=max_tokens,
             messages=[
