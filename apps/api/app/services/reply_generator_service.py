@@ -22,6 +22,7 @@ from typing import Any
 from app.schemas.order import ParsedOrder
 from app.schemas.reply import ReplyVariant, REQUIRED_TYPES
 from app.services.openai_client import openai_client
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,7 @@ class ReplyGeneratorService:
                 user_message=user_message,
                 temperature=0.7,
                 max_tokens=1500,
+                model=settings.openai_model_replies or settings.openai_model,
             )
         except Exception as exc:
             logger.error("OpenAI call failed during reply generation: %s", exc)

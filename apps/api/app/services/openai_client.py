@@ -37,6 +37,7 @@ class OpenAIClient:
         user_message: str,
         temperature: float = 0.1,   # low temp = deterministic extraction
         max_tokens: int = 1000,
+        model: str | None = None,   # per-call override; falls back to self._model
     ) -> dict[str, Any]:
         """
         Send a prompt pair to the model and parse the response as JSON.
@@ -54,10 +55,10 @@ class OpenAIClient:
             ValueError: if the response cannot be parsed as JSON.
             openai.APIError: on network / auth failures (let caller handle).
         """
-        logger.debug("OpenAI request | model=%s | user_len=%d", self._model, len(user_message))
+        logger.debug("OpenAI request | model=%s | user_len=%d", model or self._model, len(user_message))
 
         response: ChatCompletion = self._client.chat.completions.create(
-            model=self._model,
+            model=model or self._model,
             temperature=temperature,
             max_tokens=max_tokens,
             response_format={"type": "json_object"},   # forces JSON mode
