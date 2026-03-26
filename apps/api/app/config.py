@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     openai_api_key: str
     openai_model: str = "gpt-4o-mini"
     openai_model_replies: Optional[str] = None  # if not set, falls back to openai_model
+    openai_model_landing_step1: Optional[str] = None  # if not set, falls back to openai_model
     site_url: str = "http://localhost:3000"
     api_url: str = "http://localhost:8000"
 

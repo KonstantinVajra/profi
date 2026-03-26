@@ -44,6 +44,7 @@ from pydantic import ValidationError
 from app.schemas.order import ParsedOrder
 from app.schemas.landing import LandingPageModel
 from app.services.openai_client import openai_client
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -645,7 +646,7 @@ class LandingGeneratorService:
             "STEP1 OUTBOUND | model=%s | system_len=%d | user_len=%d"
             "\n--- SYSTEM ---\n%s"
             "\n--- USER ---\n%s",
-            openai_client._model,
+            settings.openai_model_landing_step1 or settings.openai_model,
             len(_step1_messages[0]["content"]),
             len(_step1_messages[1]["content"]),
             _step1_messages[0]["content"],
@@ -660,6 +661,7 @@ class LandingGeneratorService:
                 user_message=user_message,
                 temperature=0.7,
                 max_tokens=900,
+                model=settings.openai_model_landing_step1 or settings.openai_model,
             )
         except Exception as exc:
             logger.error("STEP1 FAILED — returning empty draft: %s", exc)
