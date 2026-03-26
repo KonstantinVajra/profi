@@ -41,7 +41,9 @@ import { RelatedAlbumsBlock } from "@/components/landing/RelatedAlbumsBlock";
 // ── Data fetching ─────────────────────────────────────────────────────────
 
 async function getLanding(slug: string): Promise<LandingPublicResponse | null> {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+  // SSR: use internal URL directly — Node.js cannot resolve relative /api paths.
+  // No nginx rewrite here; fetch goes straight to backend.
+  const apiUrl = process.env.INTERNAL_API_URL ?? "http://127.0.0.1:8000";
   try {
     const res = await fetch(`${apiUrl}/public/landings/${slug}`, {
       cache: "no-store",
@@ -58,7 +60,9 @@ async function getLanding(slug: string): Promise<LandingPublicResponse | null> {
 // Contacts live in Project domain, not in Landing contract.
 // Returns null on any failure — CtaButtons renders nothing without contacts.
 async function getContactInfo(projectId: string): Promise<ContactInfo | null> {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+  // SSR: use internal URL directly — Node.js cannot resolve relative /api paths.
+  // No nginx rewrite here; fetch goes straight to backend.
+  const apiUrl = process.env.INTERNAL_API_URL ?? "http://127.0.0.1:8000";
   try {
     const res = await fetch(`${apiUrl}/projects/${projectId}`, { cache: "no-store" });
     if (!res.ok) return null;

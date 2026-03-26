@@ -87,6 +87,20 @@ export default function WorkspacePage() {
   const [contactsSaved, setContactsSaved] = useState(false);
   const [contactsSaving, setContactsSaving] = useState(false);
 
+  // ── Host guard ───────────────────────────────────────────────────────────
+  // Secondary guard: redirect workspace away from the public domain.
+  // Primary enforcement is nginx (location /workspace { return 404; }).
+  // This catches direct URL entry in browsers before nginx can act.
+  // Triggers only for evflow.ru and www.evflow.ru — IP and workspace.evflow.ru are unaffected.
+  useEffect(() => {
+    const h = window.location.hostname;
+    if (h === "evflow.ru" || h === "www.evflow.ru") {
+      window.location.replace(
+        "https://workspace.evflow.ru" + window.location.pathname + window.location.search
+      );
+    }
+  }, []);
+
   // ── Project lifecycle ────────────────────────────────────────────────────
   // On mount: restore projectId from localStorage and preload contact_info.
   // Project is NOT created here — only restored if it already exists in DB.
