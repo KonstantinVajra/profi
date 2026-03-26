@@ -17,6 +17,7 @@ import {
 import type { PhotoSet } from "@/types/photo";
 import type { ContactInfo } from "@/lib/api";
 import { selectExtractionMethod } from "@/lib/extractionUtils";
+import { buildLandingUrl } from "@/lib/landingUrl";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -46,9 +47,6 @@ interface LandingData {
 // ── Component ─────────────────────────────────────────────────────────────
 
 export default function WorkspacePage() {
-  const [siteUrl, setSiteUrl] = useState("http://localhost:3000");
-  useEffect(() => { setSiteUrl(window.location.origin); }, []);
-
   // localStorage key for project lifecycle persistence
   const LS_KEY = "landingReply_projectId";
 
@@ -237,7 +235,7 @@ export default function WorkspacePage() {
 
       // 4. generate replies with real landing URL
       const slug = landingResult.landing_page.slug;
-      const landingUrl = `${siteUrl}/r/${slug}`;
+      const landingUrl = buildLandingUrl(slug);
       const repliesResult = await generateReplies(pid, landingUrl) as { reply_variants: ReplyVariantData[] };
       setReplies(repliesResult.reply_variants);
       setDraftTexts(
@@ -258,7 +256,7 @@ export default function WorkspacePage() {
     }
   }
 
-  const landingUrl = landing ? `${siteUrl}/r/${landing.landing_page.slug}` : null;
+  const landingUrl = landing ? buildLandingUrl(landing.landing_page.slug) : null;
 
   // ── Render ────────────────────────────────────────────────────────────────
 
