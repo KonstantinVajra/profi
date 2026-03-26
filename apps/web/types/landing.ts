@@ -84,6 +84,10 @@ export interface LandingPageModel {
   // Optional related photo series block. category_key filter only — no embedded data.
   // AI never generates this — injected from user input only.
   related_block?: RelatedBlock;
+  // Explicit user-edited title for MVP header rendering.
+  // Distinct from hero.title (structural/AI-generated field, legacy mode only).
+  // undefined = not user-edited → OrderHeader falls back to TEMPLATE_TITLE[template_key].
+  hero_title_override?: string;
 }
 
 export interface LandingPageMeta {

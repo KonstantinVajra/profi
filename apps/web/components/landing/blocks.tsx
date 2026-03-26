@@ -289,11 +289,16 @@ const TEMPLATE_CHIP: Record<string, string> = {
 interface OrderHeaderProps {
   templateKey: string;
   price?: string | null;
+  heroTitleOverride?: string | null;  // explicit user-edited title; undefined = not set
 }
 
-export function OrderHeader({ templateKey, price }: OrderHeaderProps) {
+export function OrderHeader({ templateKey, price, heroTitleOverride }: OrderHeaderProps) {
+  // Priority: user-edited override → TEMPLATE_TITLE[template_key] → generic fallback.
+  // hero.title (structural/AI field) is intentionally NOT used here — legacy mode only.
   const title =
-    TEMPLATE_TITLE[templateKey] ?? "Персональный отклик";
+    (heroTitleOverride && heroTitleOverride.trim())
+      ? heroTitleOverride.trim()
+      : (TEMPLATE_TITLE[templateKey] ?? "Персональный отклик");
 
   // Chips: event type label + price if present. Only non-empty values rendered.
   const chips: string[] = [];

@@ -125,6 +125,11 @@ class LandingPageModel(BaseModel):
     # Optional related photo series block. Stores category_key filter only.
     # AI must never generate this field — injected from user input only.
     related_block: Optional[RelatedBlock] = None
+    # Explicit user-edited title for MVP header rendering.
+    # Distinct from hero.title (structural/AI-generated, used in legacy mode only).
+    # None = not user-edited → renderer falls back to TEMPLATE_TITLE[template_key].
+    # AI must never generate this field — injected from user input only.
+    hero_title_override: Optional[str] = None
 
     @field_validator("quick_questions")
     @classmethod
@@ -151,6 +156,9 @@ class LandingGenerateRequest(BaseModel):
     case_series_id: Optional[str] = None    # override similar case
     review_ids: list[str] = []              # review IDs to include
     related_block: Optional[RelatedBlock] = None  # optional related photo series filter
+    # Explicit user-edited title. Stored as hero_title_override in LandingPageModel.
+    # None = not provided → renderer uses TEMPLATE_TITLE[template_key].
+    hero_title_override: Optional[str] = None
 
 
 class LandingPageMetadata(BaseModel):

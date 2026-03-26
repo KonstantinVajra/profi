@@ -101,6 +101,7 @@ export default async function LandingPage({
           <OrderHeader
             templateKey={c.template_key}
             price={c.price_card?.price}
+            heroTitleOverride={c.hero_title_override}
           />
 
           <FinalTextBlock text={c.final_text!.trim()} />

@@ -610,6 +610,7 @@ class LandingGeneratorService:
         photo_set_id: str | None = None,
         case_series_id: str | None = None,
         related_block: dict | None = None,
+        hero_title_override: str | None = None,
         project_id: str | None = None,
         db=None,
     ) -> LandingPageModel:
@@ -618,6 +619,7 @@ class LandingGeneratorService:
         return self._generate_landing_json(
             parsed_order, draft, photographer_name, price, photo_set_id, case_series_id,
             related_block=related_block,
+            hero_title_override=hero_title_override,
             project_id=project_id, db=db,
         )
 
@@ -785,6 +787,7 @@ class LandingGeneratorService:
         photo_set_id: str | None,
         case_series_id: str | None,
         related_block: dict | None = None,
+        hero_title_override: str | None = None,
         project_id: str | None = None,
         db=None,
     ) -> LandingPageModel:
@@ -857,6 +860,12 @@ class LandingGeneratorService:
         if related_block is not None:
             cleaned["related_block"] = related_block
 
+        # Inject hero_title_override from user input — never from AI output.
+        # AI must never generate this field — raw.pop is not needed here because
+        # hero_title_override is not a field AI knows about.
+        if hero_title_override and hero_title_override.strip():
+            cleaned["hero_title_override"] = hero_title_override.strip()
+
         try:
             model = LandingPageModel.model_validate(cleaned)
             logger.info("Landing generated | slug=%s | template=%s", model.slug, model.template_key)
@@ -879,6 +888,8 @@ class LandingGeneratorService:
         saved_final_text = cleaned.get("final_text")
         # Preserve related_block before repair — user input, must never be overwritten.
         saved_related_block = cleaned.get("related_block")
+        # Preserve hero_title_override before repair — user input, must never be overwritten.
+        saved_hero_title_override = cleaned.get("hero_title_override")
 
         repair_user = (
             f"Original context:\n{user_message}\n\n"
@@ -936,6 +947,10 @@ class LandingGeneratorService:
         # Restore related_block after repair — user input, repair AI must not affect it.
         if saved_related_block is not None:
             cleaned2["related_block"] = saved_related_block
+
+        # Restore hero_title_override after repair — user input, repair AI must not affect it.
+        if saved_hero_title_override is not None:
+            cleaned2["hero_title_override"] = saved_hero_title_override
 
         try:
             model = LandingPageModel.model_validate(cleaned2)
