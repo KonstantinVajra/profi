@@ -894,8 +894,10 @@ class LandingGeneratorService:
         # Strip-guarded: empty string is not an override.
         if final_text_override and final_text_override.strip():
             cleaned["final_text"] = final_text_override.strip()
+            cleaned["final_text_override"] = final_text_override.strip()
         if entry_message_override and entry_message_override.strip():
             cleaned["entry_message"] = entry_message_override.strip()
+            cleaned["entry_message_override"] = entry_message_override.strip()
 
         try:
             model = LandingPageModel.model_validate(cleaned)
@@ -988,8 +990,10 @@ class LandingGeneratorService:
         # If override is set, it wins over saved_final_text from Step 1.
         if final_text_override and final_text_override.strip():
             cleaned2["final_text"] = final_text_override.strip()
+            cleaned2["final_text_override"] = final_text_override.strip()
         if entry_message_override and entry_message_override.strip():
             cleaned2["entry_message"] = entry_message_override.strip()
+            cleaned2["entry_message_override"] = entry_message_override.strip()
 
         try:
             model = LandingPageModel.model_validate(cleaned2)
