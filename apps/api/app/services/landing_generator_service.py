@@ -602,6 +602,23 @@ class LandingGeneratorService:
             )
         return _PACKAGING_PROMPT_PATH.read_text(encoding="utf-8")
 
+    def generate_draft(
+        self,
+        parsed_order: ParsedOrder,
+        project_id: str | None = None,
+        db=None,
+    ) -> dict[str, str]:
+        """
+        Run Step 1 only. Returns semantic draft fields for user review.
+        Does NOT run Step 2. Does NOT save anything to DB.
+        Called by POST /projects/{id}/landing/draft.
+        """
+        draft = self._generate_semantic_draft(parsed_order, project_id=project_id, db=db)
+        return {
+            "final_text": draft.final_text or "",
+            "entry_message": draft.entry_message or "",
+        }
+
     def generate(
         self,
         parsed_order: ParsedOrder,
@@ -611,6 +628,8 @@ class LandingGeneratorService:
         case_series_id: str | None = None,
         related_block: dict | None = None,
         hero_title_override: str | None = None,
+        final_text_override: str | None = None,
+        entry_message_override: str | None = None,
         project_id: str | None = None,
         db=None,
     ) -> LandingPageModel:
@@ -620,6 +639,8 @@ class LandingGeneratorService:
             parsed_order, draft, photographer_name, price, photo_set_id, case_series_id,
             related_block=related_block,
             hero_title_override=hero_title_override,
+            final_text_override=final_text_override,
+            entry_message_override=entry_message_override,
             project_id=project_id, db=db,
         )
 
@@ -788,6 +809,8 @@ class LandingGeneratorService:
         case_series_id: str | None,
         related_block: dict | None = None,
         hero_title_override: str | None = None,
+        final_text_override: str | None = None,
+        entry_message_override: str | None = None,
         project_id: str | None = None,
         db=None,
     ) -> LandingPageModel:
@@ -865,6 +888,14 @@ class LandingGeneratorService:
         # hero_title_override is not a field AI knows about.
         if hero_title_override and hero_title_override.strip():
             cleaned["hero_title_override"] = hero_title_override.strip()
+
+        # Apply user overrides for final_text and entry_message.
+        # User override has highest priority — applied after _inject_draft and _post_process.
+        # Strip-guarded: empty string is not an override.
+        if final_text_override and final_text_override.strip():
+            cleaned["final_text"] = final_text_override.strip()
+        if entry_message_override and entry_message_override.strip():
+            cleaned["entry_message"] = entry_message_override.strip()
 
         try:
             model = LandingPageModel.model_validate(cleaned)
@@ -951,6 +982,14 @@ class LandingGeneratorService:
         # Restore hero_title_override after repair — user input, repair AI must not affect it.
         if saved_hero_title_override is not None:
             cleaned2["hero_title_override"] = saved_hero_title_override
+
+        # Apply user overrides for final_text and entry_message in repair path.
+        # Override has highest priority — applied last, after all restores.
+        # If override is set, it wins over saved_final_text from Step 1.
+        if final_text_override and final_text_override.strip():
+            cleaned2["final_text"] = final_text_override.strip()
+        if entry_message_override and entry_message_override.strip():
+            cleaned2["entry_message"] = entry_message_override.strip()
 
         try:
             model = LandingPageModel.model_validate(cleaned2)

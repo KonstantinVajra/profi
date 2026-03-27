@@ -21,6 +21,7 @@ from app.database import get_db
 from app.schemas.landing import (
     LandingGenerateRequest,
     LandingGenerateResponse,
+    LandingDraftResponse,
     LandingPageMetadata,
 )
 from app.schemas.order import ParsedOrder
@@ -30,6 +31,72 @@ from app.services.landing_photo_service import snapshot_photo_set
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+@router.post(
+    "/{project_id}/landing/draft",
+    response_model=LandingDraftResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Run Step 1 only — return editable draft fields without saving",
+)
+def get_landing_draft(
+    project_id: str,
+    db: Session = Depends(get_db),
+):
+    repo = LandingRepository(db)
+
+    # 1. verify project
+    repo.get_project(project_id)
+
+    # 2. load parsed order
+    parsed_order_record = repo.get_parsed_order(project_id)
+    if not parsed_order_record:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No parsed order found for this project. Run POST /orders/extract first.",
+        )
+
+    # map ORM → Pydantic for service
+    parsed_order = ParsedOrder(
+        client_name=parsed_order_record.client_name,
+        client_label=parsed_order_record.client_label,
+        event_type=parsed_order_record.event_type,
+        event_subtype=parsed_order_record.event_subtype,
+        city=parsed_order_record.city,
+        location=parsed_order_record.location,
+        event_date=parsed_order_record.event_date,
+        date_text=parsed_order_record.date_text,
+        duration_text=parsed_order_record.duration_text,
+        guest_count_text=parsed_order_record.guest_count_text,
+        budget_max=parsed_order_record.budget_max,
+        currency=parsed_order_record.currency,
+        requirements=parsed_order_record.requirements or [],
+        priority_signals=parsed_order_record.priority_signals or [],
+        tone_signal=parsed_order_record.tone_signal,
+        extracted_confidence=parsed_order_record.extracted_confidence,
+        client_intent_line=parsed_order_record.client_intent_line,
+        situation_notes=parsed_order_record.situation_notes,
+        shoot_feel=parsed_order_record.shoot_feel,
+    )
+
+    # 3. run Step 1 only — do not save anything
+    try:
+        result = landing_generator_service.generate_draft(
+            parsed_order=parsed_order,
+            project_id=project_id,
+            db=db,
+        )
+    except Exception:
+        logger.exception("Landing draft failed | project=%s", project_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Landing draft generation failed. Please retry.",
+        )
+
+    return LandingDraftResponse(
+        final_text=result["final_text"],
+        entry_message=result["entry_message"],
+    )
 
 
 @router.post(
@@ -93,6 +160,8 @@ def generate_landing(
             case_series_id=body.case_series_id,
             related_block=body.related_block.model_dump() if body.related_block else None,
             hero_title_override=body.hero_title_override,
+            final_text_override=body.final_text_override,
+            entry_message_override=body.entry_message_override,
             project_id=project_id,
             db=db,
         )
