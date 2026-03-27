@@ -88,6 +88,10 @@ export interface LandingPageModel {
   // Distinct from hero.title (structural/AI-generated field, legacy mode only).
   // undefined = not user-edited → OrderHeader falls back to TEMPLATE_TITLE[template_key].
   hero_title_override?: string;
+  // Explicit user-edited version of final_text. undefined = not user-edited.
+  final_text_override?: string;
+  // Explicit user-edited version of entry_message. undefined = not user-edited.
+  entry_message_override?: string;
 }
 
 export interface LandingPageMeta {

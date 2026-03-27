@@ -91,16 +91,30 @@ export const generateReplies = (projectId: string, landingUrl?: string) =>
   });
 
 // ── Landing ───────────────────────────────────────────────────────────────
+export const getLandingDraft = (projectId: string) =>
+  request<{ final_text: string; entry_message: string }>(
+    `/projects/${projectId}/landing/draft`,
+    { method: "POST" },
+  );
+
 export const generateLanding = (
   projectId: string,
   photoSetId?: string,
   relatedBlock?: { category_key: string },
+  overrides?: {
+    hero_title_override?: string;
+    final_text_override?: string;
+    entry_message_override?: string;
+  },
 ) =>
   request(`/projects/${projectId}/landing/generate`, {
     method: "POST",
     body: JSON.stringify({
       photo_set_id: photoSetId ?? null,
       related_block: relatedBlock ?? null,
+      hero_title_override: overrides?.hero_title_override ?? null,
+      final_text_override: overrides?.final_text_override ?? null,
+      entry_message_override: overrides?.entry_message_override ?? null,
     }),
   });
 

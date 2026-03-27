@@ -9,6 +9,7 @@ import {
   extractOrderFromImages,
   updateProjectContacts,
   generateLanding,
+  getLandingDraft,
   generateReplies,
   getPhotoSets,
   uploadPhotos,
@@ -16,6 +17,7 @@ import {
 } from "@/lib/api";
 import type { PhotoSet } from "@/types/photo";
 import type { ContactInfo } from "@/lib/api";
+import type { LandingPublicResponse } from "@/types/landing";
 import { selectExtractionMethod } from "@/lib/extractionUtils";
 import { buildLandingUrl } from "@/lib/landingUrl";
 
@@ -35,15 +37,6 @@ interface ReplyVariantData {
   message_text: string;
 }
 
-interface LandingData {
-  landing_page: { slug: string; status: string };
-  landing_content: {
-    hero: { title: string };
-    final_text?: string;     // full reply text from Step 1
-    entry_message?: string;  // short messenger hook from Step 1; preferred in workspace
-  };
-}
-
 // ── Component ─────────────────────────────────────────────────────────────
 
 export default function WorkspacePage() {
@@ -60,8 +53,14 @@ export default function WorkspacePage() {
 
   const [projectId, setProjectId] = useState<string | null>(null);
   const [parsedOrder, setParsedOrder] = useState<ParsedOrderData | null>(null);
-  const [landing, setLanding] = useState<LandingData | null>(null);
+  const [landing, setLanding] = useState<LandingPublicResponse | null>(null);
   const [replies, setReplies] = useState<ReplyVariantData[]>([]);
+
+  // Draft review state — populated after getLandingDraft(), cleared after handleConfirmDraft()
+  const [draftReview, setDraftReview] = useState<{ final_text: string; entry_message: string } | null>(null);
+  const [editHeroTitle, setEditHeroTitle] = useState("");
+  const [editFinalText, setEditFinalText] = useState("");
+  const [editEntryMessage, setEditEntryMessage] = useState("");
   // Local editable drafts keyed by ReplyVariant id.
   // Initialized from message_text on generation; never persisted to backend.
   const [draftTexts, setDraftTexts] = useState<Record<string, string>>({});
@@ -219,6 +218,7 @@ export default function WorkspacePage() {
     setLanding(null);
     setReplies([]);
     setDraftTexts({});
+    setDraftReview(null);
 
     try {
       // 1. reuse existing project or create one if this is the first action
@@ -234,20 +234,55 @@ export default function WorkspacePage() {
       ) as ParsedOrderData;
       setParsedOrder(parsed);
 
-      // 3. generate landing — resolve photo set
+      // 3. run Step 1 only — get editable draft (no landing saved yet)
+      const draft = await getLandingDraft(pid);
+      setDraftReview(draft);
+      setEditFinalText(draft.final_text);
+      setEditEntryMessage(draft.entry_message);
+      // hero_title: prefer existing override, fall back to hero.title, then empty
+      setEditHeroTitle(
+        landing?.landing_content?.hero_title_override ??
+        landing?.landing_content?.hero?.title ??
+        ""
+      );
+
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Unknown error");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleConfirmDraft() {
+    const pid = projectId;
+    if (!pid || !draftReview) return;
+    setLoading(true);
+    setError(null);
+
+    try {
+      // resolve photo set (same as before)
       let resolvedPhotoSetId: string | undefined = selectedPhotoSetId ?? undefined;
       if (!resolvedPhotoSetId && manualFiles.length > 0) {
         const uploadResult = await uploadPhotos(pid, manualFiles);
         resolvedPhotoSetId = uploadResult.photo_set_id;
       }
+
+      // generate landing with user-edited overrides
+      // always send current edit state; empty hero title → undefined (not sent as override)
       const landingResult = await generateLanding(
         pid,
         resolvedPhotoSetId,
         relatedCategoryKey ? { category_key: relatedCategoryKey } : undefined,
-      ) as LandingData;
+        {
+          hero_title_override: editHeroTitle.trim() || undefined,
+          final_text_override: editFinalText || undefined,
+          entry_message_override: editEntryMessage || undefined,
+        },
+      ) as LandingPublicResponse;
       setLanding(landingResult);
+      setDraftReview(null);
 
-      // 4. generate replies with real landing URL
+      // generate replies with real landing URL (only after landing is saved)
       const slug = landingResult.landing_page.slug;
       const landingUrl = buildLandingUrl(slug);
       const repliesResult = await generateReplies(pid, landingUrl) as { reply_variants: ReplyVariantData[] };
@@ -259,7 +294,7 @@ export default function WorkspacePage() {
         )
       );
 
-      // reset screenshots after successful generation
+      // reset after success
       setScreenshotFiles([]);
       setRelatedCategoryKey("");
 
@@ -461,6 +496,59 @@ export default function WorkspacePage() {
             {loading ? "Генерируем..." : "Сгенерировать"}
           </button>
         </section>
+
+        {/* Draft Review Block — shown after Step 1, before final generate */}
+        {draftReview && (
+          <section className="bg-white rounded-2xl p-6 shadow-sm border border-amber-200">
+            <h2 className="text-base font-semibold mb-1">Проверьте черновик</h2>
+            <p className="text-xs text-gray-400 mb-4">
+              Отредактируйте текст при необходимости и нажмите «Создать лендинг»
+            </p>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">
+                  Заголовок страницы (необязательно)
+                </label>
+                <input
+                  type="text"
+                  value={editHeroTitle}
+                  onChange={(e) => setEditHeroTitle(e.target.value)}
+                  placeholder="Оставьте пустым — будет сгенерирован автоматически"
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">
+                  Сообщение-подводка
+                </label>
+                <textarea
+                  value={editEntryMessage}
+                  onChange={(e) => setEditEntryMessage(e.target.value)}
+                  rows={3}
+                  className="w-full border rounded-lg px-3 py-2 text-sm resize-y"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">
+                  Основной текст
+                </label>
+                <textarea
+                  value={editFinalText}
+                  onChange={(e) => setEditFinalText(e.target.value)}
+                  rows={6}
+                  className="w-full border rounded-lg px-3 py-2 text-sm resize-y"
+                />
+              </div>
+              <button
+                onClick={handleConfirmDraft}
+                disabled={loading}
+                className="bg-black text-white rounded-xl px-5 py-2 text-sm disabled:opacity-40"
+              >
+                {loading ? "Создаём..." : "Создать лендинг →"}
+              </button>
+            </div>
+          </section>
+        )}
 
         {/* Block B — Parsed Order */}
         {parsedOrder && (
