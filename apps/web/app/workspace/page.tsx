@@ -206,6 +206,46 @@ export default function WorkspacePage() {
     }
   }
 
+  // ── New Reply: explicit project reset ────────────────────────────────────
+  // Clears project context and all generation state so the next
+  // "Сгенерировать" click creates a fresh Project.
+  // Contacts are preserved — they belong to the photographer, not the client.
+
+  function handleNewReply() {
+    // Clear project identity
+    setProjectId(null);
+    localStorage.removeItem(LS_KEY);
+
+    // Clear generation state
+    setParsedOrder(null);
+    setLanding(null);
+    setReplies([]);
+    setDraftTexts({});
+    setDraftReview(null);
+    setEditHeroTitle("");
+    setEditFinalText("");
+    setEditEntryMessage("");
+
+    // Clear order input
+    setOrderText("");
+    setScreenshotFiles([]);
+    setRelatedCategoryKey("");
+
+    // Clear per-reply photo selection
+    setSelectedPhotoSetId(null);
+    setManualFiles([]);
+
+    // Clear album creation form (per-reply transient input)
+    setNewAlbumName("");
+    setNewAlbumCategory("");
+    setNewAlbumFiles([]);
+
+    // photoSets (photographer's preset catalog) is NOT reset — it is global / reusable.
+
+    // Clear error
+    setError(null);
+  }
+
   // ── Step 1-4: generate everything ───────────────────────────────────────
 
   async function handleGenerate() {
@@ -605,6 +645,18 @@ ${landingUrl}`, "landing-entry")}
             </section>
           );
         })()}
+
+        {/* Block Contacts — visible from page load; project created lazily on first save */}
+        {landing && (
+          <div className="flex justify-end">
+            <button
+              onClick={handleNewReply}
+              className="text-sm text-gray-400 hover:text-black underline"
+            >
+              Новый отклик →
+            </button>
+          </div>
+        )}
 
         {/* Block Contacts — visible from page load; project created lazily on first save */}
         {!projectLoading && (
