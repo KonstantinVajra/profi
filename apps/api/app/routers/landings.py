@@ -7,7 +7,7 @@ Flow:
   1. verify project exists
   2. load latest ParsedOrder — 400 if missing
   3. generate LandingPageModel via LandingGeneratorService
-  4. delete existing landing for this project (replace)
+  4. upsert landing — preserve slug on regeneration, update content in-place
   5. save landing_pages row
   6. save landing_content row
   7. return LandingGenerateResponse
@@ -205,23 +205,42 @@ def generate_landing(
                 detail=f"Photo snapshot failed: {exc}",
             )
 
-    # 4-6. replace landing + save — wrapped together so DB stays consistent if save fails.
-    # Note: if snapshot succeeded but save fails, snapshot photo_sets/items are rolled back
-    # by db.rollback(), but files on disk are NOT cleaned up (filesystem is not transactional).
-    # filesystem cleanup is intentionally not handled in MVP.
+    # 4-6. Upsert landing — preserves slug on regeneration.
+    #
+    # Slug immutability invariant:
+    #   If a LandingPage already exists for this project, its slug is the
+    #   sole source of truth. The AI-generated slug in landing_model is
+    #   ignored. The existing slug is NEVER changed.
+    #
+    # First generation: create LandingPage + LandingContent fresh.
+    # Regeneration: update template_key (if changed) + replace content_json.
+    #
+    # Note: if snapshot succeeded but save fails, snapshot photo_sets/items
+    # are rolled back by db.rollback(), but files on disk are NOT cleaned up
+    # (filesystem is not transactional). MVP limitation — intentional.
     try:
-        repo.delete_existing_landing(project_id)
+        existing = repo.get_landing_by_project(project_id)
 
-        page = repo.create_landing_page(
-            project_id=project_id,
-            slug=landing_model.slug,
-            template_key=landing_model.template_key,
-        )
-
-        repo.create_landing_content(
-            landing_page_id=page.id,
-            model=landing_model,
-        )
+        if existing:
+            # Regeneration path — slug is preserved, content updated in-place.
+            # CRITICAL: force landing_model.slug to match existing.slug before saving
+            # content_json and before returning. LandingPage.slug and
+            # LandingPageModel.slug (inside content_json) must always be identical.
+            # AI-generated slug in landing_model is discarded.
+            landing_model = landing_model.model_copy(update={"slug": existing.slug})
+            repo.update_landing(existing, landing_model)
+            page = existing
+        else:
+            # First generation — create with AI-generated slug.
+            page = repo.create_landing_page(
+                project_id=project_id,
+                slug=landing_model.slug,
+                template_key=landing_model.template_key,
+            )
+            repo.create_landing_content(
+                landing_page_id=page.id,
+                model=landing_model,
+            )
     except Exception:
         db.rollback()
         logger.exception("Landing save failed | project=%s", project_id)

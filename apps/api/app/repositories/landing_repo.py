@@ -7,10 +7,18 @@ No business logic — only DB reads and writes.
 Methods:
   get_project              — verify project exists
   get_parsed_order         — load latest ParsedOrder for project
-  delete_existing_landing  — remove current landing before replacing
-  create_landing_page      — insert landing_pages row
-  create_landing_content   — insert landing_content row
+  delete_existing_landing  — remove current landing (dev/admin only — not called on regenerate)
+  create_landing_page      — insert landing_pages row (first generation only)
+  create_landing_content   — insert landing_content row (first generation only)
+  update_landing_content   — replace content_json in-place (regeneration — preserves slug)
+  update_landing_page      — update template_key if changed (regeneration)
   get_landing_by_project   — return landing + content for a project
+  get_landing_by_slug      — return landing + content by slug (public endpoint)
+
+Slug immutability invariant:
+  Once a LandingPage exists for a project, its slug NEVER changes.
+  On regeneration, the existing slug is the sole source of truth.
+  AI-generated slug is used ONLY on first creation and ignored thereafter.
 """
 
 import logging
@@ -48,8 +56,12 @@ class LandingRepository:
 
     def delete_existing_landing(self, project_id: str) -> None:
         """
-        Delete existing landing (page + content cascade) for a project.
-        Called before creating a fresh generation — MVP has one landing per project.
+        Physically delete the LandingPage (and cascade LandingContent) for a project.
+
+        DEV / ADMIN USE ONLY — e.g. dev_reset.py.
+        NOT called on regeneration. Regeneration uses update_landing_content()
+        to preserve the slug. Calling this on a live project will permanently
+        kill the public URL.
         """
         existing = (
             self.db.query(LandingPage)
@@ -119,9 +131,120 @@ class LandingRepository:
                     content.id, landing_page_id)
         return content
 
+    def update_landing(
+        self,
+        existing_page: LandingPage,
+        model: LandingPageModel,
+    ) -> LandingPage:
+        """
+        Atomically update LandingPage + LandingContent in one commit.
+
+        Slug is NEVER changed — immutability invariant.
+        model.slug must already be normalised to existing_page.slug by caller
+        before this method is called.
+
+        Updates:
+          - LandingPage.template_key (only if changed)
+          - LandingContent.content_json (always replaced)
+          - LandingContent.version (incremented)
+
+        If LandingContent is missing (should not happen in normal flow),
+        creates it within the same transaction.
+
+        Use this method for all regeneration. Do not call update_landing_page()
+        and update_landing_content() separately — they commit independently.
+        """
+        if existing_page.template_key != model.template_key:
+            logger.info(
+                "LandingPage template_key updated | id=%s | %s → %s",
+                existing_page.id, existing_page.template_key, model.template_key,
+            )
+            existing_page.template_key = model.template_key
+
+        content = existing_page.content
+        if content is None:
+            # Defensive: create if somehow absent — within same transaction.
+            logger.warning(
+                "LandingContent missing for existing landing — creating | landing=%s",
+                existing_page.id,
+            )
+            content = LandingContent(
+                landing_page_id=existing_page.id,
+                content_json=model.model_dump(mode="json"),
+                version=1,
+            )
+            self.db.add(content)
+        else:
+            content.content_json = model.model_dump(mode="json")
+            content.version = (content.version or 1) + 1
+
+        # Single commit — both LandingPage and LandingContent in one transaction.
+        self.db.commit()
+        self.db.refresh(existing_page)
+        self.db.refresh(content)
+
+        logger.info(
+            "Landing updated atomically | id=%s | slug=%s | version=%s",
+            existing_page.id, existing_page.slug, content.version,
+        )
+        return existing_page
+
+    def update_landing_content(
+        self,
+        existing_page: LandingPage,
+        model: LandingPageModel,
+    ) -> LandingContent:
+        """
+        Replace content_json in-place on regeneration.
+        Slug on existing_page is NOT touched — immutability invariant.
+        If LandingContent is missing (should not happen), creates it.
+        """
+        content = existing_page.content
+        if content is None:
+            # Defensive: create if somehow absent
+            logger.warning(
+                "LandingContent missing for existing landing — creating | landing=%s",
+                existing_page.id,
+            )
+            return self.create_landing_content(existing_page.id, model)
+
+        content.content_json = model.model_dump(mode="json")
+        content.version = (content.version or 1) + 1
+        self.db.commit()
+        self.db.refresh(content)
+        logger.info(
+            "LandingContent updated in-place | id=%s | landing=%s | version=%s",
+            content.id, existing_page.id, content.version,
+        )
+        return content
+
+    def update_landing_page(
+        self,
+        existing_page: LandingPage,
+        template_key: str,
+    ) -> LandingPage:
+        """
+        Update template_key only if it changed.
+        Slug is NEVER changed — immutability invariant.
+        """
+        if existing_page.template_key != template_key:
+            logger.info(
+                "LandingPage template_key updated | id=%s | %s → %s",
+                existing_page.id, existing_page.template_key, template_key,
+            )
+            existing_page.template_key = template_key
+            self.db.commit()
+            self.db.refresh(existing_page)
+        return existing_page
+
     def get_landing_by_project(self, project_id: str) -> LandingPage | None:
+        """
+        Return LandingPage with eagerly loaded content for a project.
+        joinedload prevents DetachedInstanceError when accessing page.content.
+        """
         return (
             self.db.query(LandingPage)
+            .options(joinedload(LandingPage.content))
             .filter(LandingPage.project_id == project_id)
             .first()
         )
