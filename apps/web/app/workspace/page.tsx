@@ -272,6 +272,12 @@ export default function WorkspacePage() {
       setProjectId(project.id);
       const pid = project.id;
 
+      // 1b. If contacts are already filled in, save them to the new project
+      // before running the pipeline — landing must have contacts at render time.
+      if (Object.values(contacts).some(v => typeof v === "string" && v.trim() !== "")) {
+        await updateProjectContacts(pid, contacts);
+      }
+
       // 2. extract order — single file uses /extract/image, multiple uses /extract/images
       const parsed = (
         extractionMethod === "text"
