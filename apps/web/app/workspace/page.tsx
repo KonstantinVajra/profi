@@ -126,8 +126,10 @@ export default function WorkspacePage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Get existing projectId or create a new project on first meaningful action.
-  // Both handleSaveContacts and handleGenerate call this — only one project per session.
+  // Create a new project or return the current one if already set.
+  // handleGenerate() resets projectId before calling this, so it always
+  // creates a fresh Project for each generate action.
+  // handleSaveContacts() calls this without resetting — preserves current project.
   async function ensureProject(): Promise<string> {
     if (projectId) return projectId;
     const project = await createProject() as { id: string };
@@ -261,8 +263,14 @@ export default function WorkspacePage() {
     setDraftReview(null);
 
     try {
-      // 1. reuse existing project or create one if this is the first action
-      const pid = await ensureProject();
+      // 1. Always create a new Project for each generate action.
+      // Do NOT call ensureProject() here — it reads projectId from React state
+      // which may not have flushed yet. Call createProject() directly to guarantee
+      // a fresh project regardless of current state.
+      const project = await createProject() as { id: string };
+      localStorage.setItem(LS_KEY, project.id);
+      setProjectId(project.id);
+      const pid = project.id;
 
       // 2. extract order — single file uses /extract/image, multiple uses /extract/images
       const parsed = (
