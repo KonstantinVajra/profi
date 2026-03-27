@@ -877,7 +877,7 @@ class LandingGeneratorService:
         raw.pop("related_block", None)
 
         patched = self._inject_draft(raw, draft)
-        cleaned = self._post_process(patched, parsed_order, photo_set_id)
+        cleaned = self._post_process(patched, parsed_order, photo_set_id, project_id=project_id)
 
         # Inject related_block from user input — never from AI output.
         if related_block is not None:
@@ -971,7 +971,7 @@ class LandingGeneratorService:
         raw2.pop("related_block", None)
 
         patched2 = self._inject_draft(raw2, draft)
-        cleaned2 = self._post_process(patched2, parsed_order, photo_set_id)
+        cleaned2 = self._post_process(patched2, parsed_order, photo_set_id, project_id=project_id)
 
         # Restore final_text after repair — repair AI does not know about it.
         if saved_final_text is not None:
@@ -1165,10 +1165,11 @@ class LandingGeneratorService:
         raw: dict[str, Any],
         parsed_order: ParsedOrder,
         photo_set_id_override: str | None,
+        project_id: str | None = None,
     ) -> dict[str, Any]:
         result = dict(raw)
 
-        result["slug"] = self._safe_slug(result.get("slug", ""), parsed_order)
+        result["slug"] = self._safe_slug(result.get("slug", ""), parsed_order, project_id)
 
         if not result.get("template_key"):
             event_type = (parsed_order.event_type or "other").lower()
@@ -1193,35 +1194,58 @@ class LandingGeneratorService:
 
         return result
 
-    def _safe_slug(self, raw: str, parsed_order: ParsedOrder) -> str:
+    def _safe_slug(self, raw: str, parsed_order: ParsedOrder, project_id: str | None = None) -> str:
+        """
+        Produce a URL-safe slug.
+
+        Slug generation invariant:
+          slug = <human-readable-part> + "-" + <project_token>
+
+        Where project_token = project_id.replace("-", "")[:8]
+        Token appended only when project_id is provided.
+        Guarantees uniqueness at Project level — two projects with identical
+        order data produce different slugs.
+
+        Human-readable part capped at 50 chars so total slug <= 60
+        (50 human + 1 separator + 8 token = 59).
+        """
+        # Build human-readable part
         if raw and re.match(r'^[a-z0-9\-]+$', raw):
-            return raw[:60]
+            human = raw[:50]
+        else:
+            parts: list[str] = []
 
-        parts: list[str] = []
+            label = parsed_order.client_label or parsed_order.client_name
+            if label:
+                parts.append(self._to_latin(label.split()[0]))
 
-        label = parsed_order.client_label or parsed_order.client_name
-        if label:
-            parts.append(self._to_latin(label.split()[0]))
+            if parsed_order.event_type:
+                type_map = {
+                    "registry": "registry", "wedding": "wedding",
+                    "family": "family", "event": "event", "portrait": "portrait",
+                }
+                parts.append(type_map.get(parsed_order.event_type, parsed_order.event_type))
 
-        if parsed_order.event_type:
-            type_map = {
-                "registry": "registry", "wedding": "wedding",
-                "family": "family", "event": "event", "portrait": "portrait",
-            }
-            parts.append(type_map.get(parsed_order.event_type, parsed_order.event_type))
+            if parsed_order.date_text:
+                parts.append(self._to_latin(parsed_order.date_text))
+            elif parsed_order.event_date:
+                parts.append(parsed_order.event_date.strftime("%d-%b").lower())
 
-        if parsed_order.date_text:
-            parts.append(self._to_latin(parsed_order.date_text))
-        elif parsed_order.event_date:
-            parts.append(parsed_order.event_date.strftime("%d-%b").lower())
+            if parts:
+                human = "-".join(p for p in parts if p)
+                human = re.sub(r'-+', '-', human).strip('-')
+                human = human[:50] or "landing"
+            else:
+                import uuid
+                human = f"landing-{str(uuid.uuid4())[:8]}"
 
-        if parts:
-            slug = "-".join(p for p in parts if p)
-            slug = re.sub(r'-+', '-', slug).strip('-')
-            return slug[:60] or "landing"
+        # Append project_token for structural uniqueness
+        if project_id:
+            token = project_id.replace("-", "")[:8]
+            return f"{human}-{token}"
 
-        import uuid
-        return f"landing-{str(uuid.uuid4())[:8]}"
+        # Fallback: no project_id — return human part only (legacy / draft path)
+        return human
 
     @staticmethod
     def _to_latin(text: str) -> str:
